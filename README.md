@@ -1,7 +1,7 @@
 # EvalHub SDK
 
 [![PyPI version](https://img.shields.io/pypi/v/eval-hub-sdk.svg)](https://pypi.org/project/eval-hub-sdk/)
-[![CI](https://github.com/eval-hub/eval-hub-sdk/actions/workflows/test.yml/badge.svg)](https://github.com/eval-hub/eval-hub-sdk/actions/workflows/test.yml)
+[![CI](https://github.com/eval-hub/eval-hub-sdk/actions/workflows/test.yml/badge.svg?event=push)](https://github.com/eval-hub/eval-hub-sdk/actions/workflows/test.yml)
 
 **Framework Adapter SDK for EvalHub Integration**
 
