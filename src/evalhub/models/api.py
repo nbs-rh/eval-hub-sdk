@@ -217,13 +217,6 @@ class BenchmarkResult(BaseModel):
 class EvaluationJobResults(BaseModel):
     """Results from an evaluation job."""
 
-    total_evaluations: int = Field(..., description="Total number of evaluations")
-    completed_evaluations: int = Field(
-        default=0, description="Number of completed evaluations"
-    )
-    failed_evaluations: int = Field(
-        default=0, description="Number of failed evaluations"
-    )
     benchmarks: list[BenchmarkResult] = Field(
         default_factory=list, description="Benchmark results"
     )

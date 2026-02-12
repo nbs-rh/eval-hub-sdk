@@ -62,11 +62,12 @@ class AsyncJobsResource:
         response = await self._client._request_get(f"/evaluations/jobs/{job_id}")
         return EvaluationJob(**response.json())
 
-    async def cancel(self, job_id: str) -> bool:
+    async def cancel(self, job_id: str, hard_delete: bool = False) -> bool:
         """Cancel an evaluation job.
 
         Args:
             job_id: The job identifier
+            hard_delete: If True, permanently delete the job instead of just cancelling it
 
         Returns:
             bool: True if job was successfully cancelled
@@ -78,7 +79,12 @@ class AsyncJobsResource:
             httpx.HTTPError: If request fails for other reasons
         """
         try:
-            await self._client._request_delete(f"/evaluations/jobs/{job_id}")
+            params = {}
+            if hard_delete:
+                params["hard_delete"] = "true"
+            await self._client._request_delete(
+                f"/evaluations/jobs/{job_id}", params=params
+            )
             return True
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
@@ -195,11 +201,12 @@ class SyncJobsResource:
         response = self._client._request_get(f"/evaluations/jobs/{job_id}")
         return EvaluationJob(**response.json())
 
-    def cancel(self, job_id: str) -> bool:
+    def cancel(self, job_id: str, hard_delete: bool = False) -> bool:
         """Cancel an evaluation job.
 
         Args:
             job_id: The job identifier
+            hard_delete: If True, permanently delete the job instead of just cancelling it
 
         Returns:
             bool: True if job was successfully cancelled
@@ -211,7 +218,10 @@ class SyncJobsResource:
             httpx.HTTPError: If request fails for other reasons
         """
         try:
-            self._client._request_delete(f"/evaluations/jobs/{job_id}")
+            params = {}
+            if hard_delete:
+                params["hard_delete"] = "true"
+            self._client._request_delete(f"/evaluations/jobs/{job_id}", params=params)
             return True
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:

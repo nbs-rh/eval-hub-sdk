@@ -179,15 +179,11 @@ class TestEvaluationJob:
                 BenchmarkConfig(id="test", provider_id="test_provider", parameters={})
             ],
             results=EvaluationJobResults(
-                total_evaluations=1,
-                completed_evaluations=1,
-                failed_evaluations=0,
                 benchmarks=[],
             ),
         )
         assert job.state == JobStatus.COMPLETED
         assert job.results is not None
-        assert job.results.completed_evaluations == 1
 
     def test_failed_evaluation_job(self) -> None:
         """Test failed EvaluationJob."""
