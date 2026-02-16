@@ -1,6 +1,7 @@
 """Default callback implementation for adapters."""
 
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +9,7 @@ from ..models.api import JobStatus
 from .models import (
     JobCallbacks,
     JobResults,
+    JobSpec,
     JobStatusUpdate,
     OCIArtifactResult,
     OCIArtifactSpec,
@@ -394,3 +396,77 @@ class DefaultCallbacks(JobCallbacks):
             f"Examples: {results.num_examples_evaluated} | "
             f"Duration: {results.duration_seconds:.2f}s"
         )
+
+    def report_metrics_to_mlflow(
+        self, results: JobResults, job_spec: JobSpec
+    ) -> None:
+        """Report evaluation metrics to MLflow if experiment is configured.
+
+        Args:
+            results: Final job results containing metrics to log
+            job_spec: Job specification that may contain experiment configuration
+
+        Raises:
+            RuntimeError: If MLflow logging fails
+        """
+        # Check if experiment is configured
+        if not job_spec.experiment_name:
+            logger.debug("No MLflow experiment configured, skipping MLflow logging")
+            return
+
+        # Try to import mlflow
+        try:
+            import mlflow
+        except ImportError:
+            logger.warning(
+                "mlflow-skinny not installed. MLflow logging skipped. "
+                "Install with: pip install mlflow-skinny>=3.10.0rc0"
+            )
+            return
+
+        try:
+            # Load auth token from projected volume if configured into env variable.
+            # On ROSA/STS clusters the auto-mounted SA token has the wrong audience,
+            # so the operator mounts a projected token with the default K8s API audience.
+            token_path = os.environ.get("MLFLOW_TRACKING_TOKEN_PATH")
+            if token_path:
+                try:
+                    with open(token_path) as f:
+                        token = f.read().strip()
+                    if token:
+                        os.environ["MLFLOW_TRACKING_TOKEN"] = token
+                except OSError as e:
+                    logger.warning(f"Could not read MLFlow token from {token_path}: {e}")
+
+            # Set or create experiment
+            mlflow.set_experiment(job_spec.experiment_name)
+
+            # Start a run with the job ID as run name
+            with mlflow.start_run(run_name=results.id):
+                # Log parameters
+                mlflow.log_param("benchmark_id", results.benchmark_id)
+                mlflow.log_param("model_name", results.model_name)
+                mlflow.log_param("num_examples_evaluated", results.num_examples_evaluated)
+                mlflow.log_param("duration_seconds", results.duration_seconds)
+
+                # Log tags from job spec (tags is list[dict] with "key"/"value" entries)
+                if job_spec.tags:
+                    for tag in job_spec.tags:
+                        mlflow.set_tag(tag["key"], tag["value"])
+
+                # Log evaluation metrics
+                for result in results.results:
+                    mlflow.log_metric(result.metric_name, result.metric_value)
+
+                # Log overall score if available
+                if results.overall_score is not None:
+                    mlflow.log_metric("overall_score", results.overall_score)
+
+                logger.info(
+                    f"Metrics logged to MLflow experiment '{job_spec.experiment_name}' "
+                    f"(run: {results.id})"
+                )
+
+        except Exception as e:
+            logger.error(f"Failed to log metrics to MLflow: {e}")
+            raise RuntimeError(f"MLflow logging failed: {e}") from e
