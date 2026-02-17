@@ -1,9 +1,12 @@
 """Default callback implementation for adapters."""
+from __future__ import annotations
 
 import logging
 import os
 from pathlib import Path
 from typing import Any
+
+from evalhub.adapter.models.adapter import FrameworkAdapter
 
 from ..models.api import JobStatus
 from .models import (
@@ -15,6 +18,7 @@ from .models import (
     OCIArtifactSpec,
 )
 from .oci import OCIArtifactPersister
+from .oci.persister import OCIArtifactContext
 
 logger = logging.getLogger(__name__)
 
@@ -36,17 +40,14 @@ class DefaultCallbacks(JobCallbacks):
             benchmark_id="mmlu",
             provider_id="lm_evaluation_harness",
             sidecar_url="http://localhost:8080",
-            registry_url="ghcr.io",
-            registry_username=os.getenv("REGISTRY_USER"),
-            registry_password=os.getenv("REGISTRY_TOKEN")
+            oci_auth_config_path=Path("~/.docker/config.json"),
         )
 
         # Local development (no evalhub, just logging)
         callbacks = DefaultCallbacks(
             job_id="my-job-123",
             benchmark_id="mmlu",
-            registry_url="localhost:5000",
-            insecure=True
+            oci_insecure=True,
         )
 
         adapter = MyAdapter()
@@ -60,14 +61,13 @@ class DefaultCallbacks(JobCallbacks):
         benchmark_id: str,
         provider_id: str | None = None,
         sidecar_url: str | None = None,
-        registry_url: str | None = None,
-        registry_username: str | None = None,
-        registry_password: str | None = None,
         insecure: bool = False,
         auth_token: str | None = None,
         auth_token_path: Path | str | None = None,
         ca_bundle_path: Path | str | None = None,
         events_path_template: str | None = None,
+        oci_auth_config_path: Path | None = None,
+        oci_insecure: bool = False,
     ):
         """Initialize default callbacks.
 
@@ -78,10 +78,7 @@ class DefaultCallbacks(JobCallbacks):
                         will not include provider_id field.
             sidecar_url: URL of evalhub service for status updates (optional).
                         If None, status updates are logged locally.
-            registry_url: OCI registry URL (e.g., "ghcr.io")
-            registry_username: Registry username
-            registry_password: Registry password/token
-            insecure: Allow insecure HTTP connections (both registry and evalhub)
+            insecure: Allow insecure HTTP connections (evalhub)
             auth_token: Explicit authentication token (overrides auto-detection)
             auth_token_path: Path to authentication token file (e.g., ServiceAccount token)
                            If not provided, auto-detects Kubernetes ServiceAccount token
@@ -100,10 +97,13 @@ class DefaultCallbacks(JobCallbacks):
 
         # Initialize OCI persister
         self.persister = OCIArtifactPersister(
-            registry_url=registry_url,
-            username=registry_username,
-            password=registry_password,
-            insecure=insecure,
+            context=OCIArtifactContext(
+                job_id=job_id,
+                benchmark_id=benchmark_id,
+                provider_id=provider_id,
+            ),
+            oci_auth_config_path=oci_auth_config_path,
+            oci_insecure=oci_insecure,
         )
 
         # Store insecure flag for evalhub communication
@@ -308,9 +308,6 @@ class DefaultCallbacks(JobCallbacks):
     def create_oci_artifact(self, spec: OCIArtifactSpec) -> OCIArtifactResult:
         """Create OCI artifact using the SDK persister.
 
-        The SDK always handles OCI pushing directly, regardless of whether
-        a sidecar is present.
-
         Args:
             spec: Artifact specification
 
@@ -320,8 +317,10 @@ class DefaultCallbacks(JobCallbacks):
         Raises:
             RuntimeError: If artifact creation fails
         """
-        logger.info(f"Creating OCI artifact for job {spec.id}")
-        return self.persister.persist(spec)
+        logger.info(f"Creating OCI artifact for job {self.job_id}")
+        result = self.persister.persist(spec)
+        logger.info(f"Created OCI artifact for job {self.job_id} as: {result}")
+        return result
 
     def report_results(self, results: JobResults) -> None:
         """Report final evaluation results to evalhub or log them.
@@ -364,7 +363,6 @@ class DefaultCallbacks(JobCallbacks):
                     status_event["artifacts"] = {
                         "oci_reference": results.oci_artifact.reference,
                         "oci_digest": results.oci_artifact.digest,
-                        "size_bytes": results.oci_artifact.size_bytes,
                     }
 
                 data = {"benchmark_status_event": status_event}
@@ -475,3 +473,16 @@ class DefaultCallbacks(JobCallbacks):
         except Exception as e:
             logger.error(f"Failed to log metrics to MLflow: {e}")
             raise RuntimeError(f"MLflow logging failed: {e}") from e
+
+    @staticmethod
+    def from_adapter(adapter: FrameworkAdapter) -> DefaultCallbacks:
+        """convenience method, and do not store adapter instance"""
+        return DefaultCallbacks(
+            job_id=adapter.job_spec.id,
+            provider_id=adapter.job_spec.provider_id,
+            benchmark_id=adapter.job_spec.benchmark_id,
+            sidecar_url=adapter.job_spec.callback_url,
+            insecure=adapter.settings.evalhub_insecure,
+            oci_auth_config_path=adapter.settings.oci_auth_config_path,
+            oci_insecure=adapter.settings.oci_insecure,
+        )
