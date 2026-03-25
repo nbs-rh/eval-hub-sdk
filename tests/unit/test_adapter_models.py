@@ -163,6 +163,50 @@ class TestJobSpec:
             {"key": "env", "value": "production"},
         ]
 
+    def test_jobspec_without_benchmark_index_defaults_to_zero(self) -> None:
+        """Regression test for RHOAIENG-52322: benchmark_index should default to 0."""
+        spec = JobSpec(
+            id="test-job-no-idx",
+            provider_id="lm_evaluation_harness",
+            benchmark_id="arc_easy",
+            model=ModelConfig(url="http://localhost:8000", name="model"),
+            parameters={"limit": 5},
+            callback_url="http://localhost:8080",
+        )
+
+        assert spec.benchmark_index == 0
+
+    def test_jobspec_from_file_without_benchmark_index(self, tmp_path: Path) -> None:
+        """Regression test for RHOAIENG-52322: loading job spec without benchmark_index."""
+        job_spec = {
+            "id": "test-job-compat",
+            "provider_id": "lm_evaluation_harness",
+            "benchmark_id": "arc_easy",
+            "model": {"url": "http://localhost:8000", "name": "model"},
+            "parameters": {},
+            "callback_url": "http://localhost:8080",
+        }
+
+        spec_file = tmp_path / "job.json"
+        spec_file.write_text(json.dumps(job_spec))
+
+        spec = JobSpec.from_file(spec_file)
+        assert spec.benchmark_index == 0
+
+    def test_jobspec_with_explicit_benchmark_index(self) -> None:
+        """Verify explicit benchmark_index is preserved (not overridden by default)."""
+        spec = JobSpec(
+            id="test-job-idx",
+            provider_id="lm_evaluation_harness",
+            benchmark_id="humaneval",
+            benchmark_index=3,
+            model=ModelConfig(url="http://localhost:8000", name="model"),
+            parameters={},
+            callback_url="http://localhost:8080",
+        )
+
+        assert spec.benchmark_index == 3
+
     def test_jobspec_can_be_serialized_to_json(self) -> None:
         """Test JobSpec can be serialized to JSON."""
         spec = JobSpec(
@@ -398,6 +442,19 @@ class TestJobResults:
 
         assert results.oci_artifact is not None
         assert results.oci_artifact.digest == "sha256:abc123"
+
+    def test_job_results_without_benchmark_index_defaults_to_zero(self) -> None:
+        """Regression test for RHOAIENG-52322: benchmark_index should default to 0."""
+        results = JobResults(
+            id="test-job-001",
+            benchmark_id="mmlu",
+            model_name="model",
+            results=[],
+            num_examples_evaluated=100,
+            duration_seconds=60.0,
+        )
+
+        assert results.benchmark_index == 0
 
     def test_that_completed_at_is_automatically_set(self) -> None:
         """Test that completed_at is automatically set."""
