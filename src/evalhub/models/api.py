@@ -577,6 +577,15 @@ class BenchmarkReference(BaseModel):
         default=None, description="Pass/fail criteria"
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_id(cls, data: Any) -> Any:
+        """Accept 'benchmark_id' as an alias for 'id' for backwards compatibility."""
+        if isinstance(data, dict) and "benchmark_id" in data and "id" not in data:
+            data = dict(data)
+            data["id"] = data.pop("benchmark_id")
+        return data
+
 
 class Collection(BaseModel):
     """Collection of benchmarks from EvalHub API."""
@@ -612,6 +621,21 @@ class CollectionList(BaseModel):
     first: dict[str, str] | None = Field(None, description="Link to first page")
     next: dict[str, str] | None = Field(None, description="Link to next page")
     limit: int | None = Field(None, description="Page size limit")
+
+
+class CollectionCreateRequest(BaseModel):
+    """Request body for creating a new benchmark collection."""
+
+    name: str = Field(..., description="Collection name")
+    description: str = Field(default="", description="Collection description")
+    tags: list[str] = Field(default_factory=list, description="Collection tags")
+    benchmarks: list[BenchmarkReference] = Field(
+        default_factory=list, description="Benchmarks to include in the collection"
+    )
+    pass_criteria: PassCriteria | None = Field(
+        default=None, description="Pass/fail criteria for the collection"
+    )
+    custom: dict[str, Any] = Field(default_factory=dict, description="Custom metadata")
 
 
 class FrameworkInfo(BaseModel):
