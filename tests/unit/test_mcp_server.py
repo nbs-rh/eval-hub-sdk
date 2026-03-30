@@ -32,10 +32,13 @@ from evalhub.models.api import (
     BenchmarkConfig,
     BenchmarkReference,
     Collection,
+    CollectionRef,
     EvaluationJob,
     EvaluationJobResource,
     EvaluationJobStatus,
+    ExperimentConfig,
     JobStatus,
+    ModelAuth,
     ModelConfig,
     Provider,
     Resource,
@@ -269,16 +272,83 @@ async def test_list_tools() -> None:
     assert len(tool_names) == 2
 
 
+async def test_submit_evaluation_schema() -> None:
+    """Verify the generated inputSchema contains typed $defs for Pydantic models."""
+    tools = await mcp.list_tools()
+    tool = next(t for t in tools if t.name == "submit_evaluation")
+    schema = tool.inputSchema
+
+    # Required top-level params
+    assert "name" in schema["required"]
+    assert "model" in schema["required"]
+
+    # Pydantic models generate $defs with full property definitions
+    defs = schema["$defs"]
+    assert "ModelConfig" in defs
+    assert "BenchmarkConfig" in defs
+
+    # ModelConfig has url and name as required
+    model_def = defs["ModelConfig"]
+    assert "url" in model_def["properties"]
+    assert "name" in model_def["properties"]
+    assert "url" in model_def["required"]
+    assert "name" in model_def["required"]
+
+    # BenchmarkConfig has id and provider_id as required
+    bench_def = defs["BenchmarkConfig"]
+    assert "id" in bench_def["properties"]
+    assert "provider_id" in bench_def["properties"]
+    assert "id" in bench_def["required"]
+    assert "provider_id" in bench_def["required"]
+
+
+async def test_submit_evaluation_wire_path(mock_client: MagicMock) -> None:
+    """Invoke submit_evaluation through FastMCP's call_tool with JSON-like dicts."""
+    await mcp.call_tool(
+        "submit_evaluation",
+        {
+            "name": "wire-eval",
+            "model": {"url": "http://model:8000/v1", "name": "llama3"},
+            "benchmarks": [
+                {"id": "gsm8k", "provider_id": "lm_eval"},
+                {
+                    "id": "mmlu",
+                    "provider_id": "lm_eval",
+                    "parameters": {"num_few_shot": 5},
+                },
+            ],
+            "experiment": {
+                "name": "my-experiment",
+                "tags": [{"key": "team", "value": "nlp"}],
+            },
+        },
+    )
+
+    mock_client.jobs.submit.assert_awaited_once()
+    request = mock_client.jobs.submit.call_args[0][0]
+    assert isinstance(request.model, ModelConfig)
+    assert request.model.url == "http://model:8000/v1"
+    assert request.model.name == "llama3"
+    assert len(request.benchmarks) == 2
+    assert isinstance(request.benchmarks[0], BenchmarkConfig)
+    assert request.benchmarks[0].id == "gsm8k"
+    assert request.benchmarks[1].parameters == {"num_few_shot": 5}
+    assert isinstance(request.experiment, ExperimentConfig)
+    assert request.experiment.name == "my-experiment"
+    assert len(request.experiment.tags) == 1
+    assert request.experiment.tags[0].key == "team"
+
+
 # ---------------------------------------------------------------------------
-# Tool call tests
+# Tool call tests (direct invocation)
 # ---------------------------------------------------------------------------
 
 
 async def test_submit_evaluation(mock_client: MagicMock) -> None:
     result = await submit_evaluation(
         name="my-eval",
-        model={"url": "http://model:8000", "name": "llama3"},
-        benchmarks=[{"id": "gsm8k", "provider_id": "lm_eval"}],
+        model=ModelConfig(url="http://model:8000", name="llama3"),
+        benchmarks=[BenchmarkConfig(id="gsm8k", provider_id="lm_eval")],
     )
     data = json.loads(result)
     assert data["name"] == "test-eval"
@@ -297,8 +367,8 @@ async def test_submit_evaluation(mock_client: MagicMock) -> None:
 async def test_submit_evaluation_with_collection(mock_client: MagicMock) -> None:
     result = await submit_evaluation(
         name="collection-eval",
-        model={"url": "http://model:8000", "name": "llama3"},
-        collection={"id": "standard"},
+        model=ModelConfig(url="http://model:8000", name="llama3"),
+        collection=CollectionRef(id="standard"),
     )
     json.loads(result)  # validate JSON output
 
@@ -312,12 +382,12 @@ async def test_submit_evaluation_with_collection(mock_client: MagicMock) -> None
 async def test_submit_evaluation_with_model_auth(mock_client: MagicMock) -> None:
     await submit_evaluation(
         name="auth-eval",
-        model={
-            "url": "http://model:8000",
-            "name": "llama3",
-            "auth": {"secret_ref": "my-secret"},
-        },
-        benchmarks=[{"id": "gsm8k", "provider_id": "lm_eval"}],
+        model=ModelConfig(
+            url="http://model:8000",
+            name="llama3",
+            auth=ModelAuth(secret_ref="my-secret"),
+        ),
+        benchmarks=[BenchmarkConfig(id="gsm8k", provider_id="lm_eval")],
     )
 
     call_args = mock_client.jobs.submit.call_args
@@ -329,9 +399,9 @@ async def test_submit_evaluation_with_model_auth(mock_client: MagicMock) -> None
 async def test_submit_evaluation_with_experiment(mock_client: MagicMock) -> None:
     await submit_evaluation(
         name="exp-eval",
-        model={"url": "http://model:8000", "name": "llama3"},
-        benchmarks=[{"id": "gsm8k", "provider_id": "lm_eval"}],
-        experiment={"name": "my-experiment"},
+        model=ModelConfig(url="http://model:8000", name="llama3"),
+        benchmarks=[BenchmarkConfig(id="gsm8k", provider_id="lm_eval")],
+        experiment=ExperimentConfig(name="my-experiment"),
     )
 
     call_args = mock_client.jobs.submit.call_args
@@ -341,24 +411,35 @@ async def test_submit_evaluation_with_experiment(mock_client: MagicMock) -> None
 
 
 async def test_submit_evaluation_both_benchmarks_and_collection(
-    mock_client: MagicMock
+    mock_client: MagicMock,
 ) -> None:
     with pytest.raises(ValueError, match="exactly one"):
         await submit_evaluation(
             name="bad-eval",
-            model={"url": "http://model:8000", "name": "llama3"},
-            benchmarks=[{"id": "gsm8k", "provider_id": "lm_eval"}],
-            collection={"id": "standard"},
+            model=ModelConfig(url="http://model:8000", name="llama3"),
+            benchmarks=[BenchmarkConfig(id="gsm8k", provider_id="lm_eval")],
+            collection=CollectionRef(id="standard"),
         )
 
 
 async def test_submit_evaluation_neither_benchmarks_nor_collection(
-    mock_client: MagicMock
+    mock_client: MagicMock,
 ) -> None:
     with pytest.raises(ValueError, match="exactly one"):
         await submit_evaluation(
             name="bad-eval",
-            model={"url": "http://model:8000", "name": "llama3"},
+            model=ModelConfig(url="http://model:8000", name="llama3"),
+        )
+
+
+async def test_submit_evaluation_empty_benchmarks(
+    mock_client: MagicMock,
+) -> None:
+    with pytest.raises(ValueError, match="cannot be empty"):
+        await submit_evaluation(
+            name="bad-eval",
+            model=ModelConfig(url="http://model:8000", name="llama3"),
+            benchmarks=[],
         )
 
 
