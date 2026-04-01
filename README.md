@@ -70,7 +70,7 @@ The SDK is organized into distinct, focused packages:
 **Client SDK (`evalhub.client`)** - REST API client for EvalHub service
 - HTTP client for submitting evaluations to EvalHub
 - Resource navigation (providers, benchmarks, collections)
-- See [CLIENT_SDK_GUIDE.md](./CLIENT_SDK_GUIDE.md)
+- See [Getting Started with the CLI](https://eval-hub.github.io/getting-started/cli/)
 
 ### Key Components
 
@@ -553,7 +553,6 @@ spec:
 
 ## Development
 
-### Setting Up Development Environment
 ### Development Setup
 
 ```bash
