@@ -6,7 +6,10 @@ from pathlib import Path
 
 import pytest
 from evalhub.adapter import (
+    CapabilityEvalEntry,
+    EnvironmentCardMetadata,
     ErrorInfo,
+    EvalCardMetadata,
     EvaluationResult,
     FrameworkAdapter,
     JobCallbacks,
@@ -19,6 +22,7 @@ from evalhub.adapter import (
     ModelConfig,
     OCIArtifactResult,
     OCIArtifactSpec,
+    SafetyEvalEntry,
 )
 
 
@@ -688,3 +692,211 @@ class TestLocalJobsBasePath:
 
         with pytest.raises(AssertionError, match="must be set in local mode"):
             adapter.local_jobs_base_path
+
+
+class TestEvalCardMetadata:
+    """Tests for EvalCardMetadata model."""
+
+    def test_creating_evalcard_with_all_sections(self) -> None:
+        card = EvalCardMetadata(
+            modalities_input=["text"],
+            modalities_output=["text"],
+            languages_count=1,
+            languages=["en"],
+            capability_evaluations=[
+                CapabilityEvalEntry(
+                    ability="knowledge",
+                    benchmark="MMLU",
+                    metric="exact_match",
+                    zero_shot=0.61,
+                    alt_prompting=0.71,
+                    alt_prompting_description="5-Shot CoT",
+                ),
+            ],
+            safety_evaluations=[
+                SafetyEvalEntry(
+                    feature="toxicity",
+                    benchmark="ToxiGen",
+                    metric="pass_rate",
+                    zero_shot=0.95,
+                ),
+            ],
+            developer_footnotes="MMLU evaluated on the test split.",
+        )
+
+        assert card.modalities_input == ["text"]
+        assert card.languages_count == 1
+        assert len(card.capability_evaluations) == 1
+        assert card.capability_evaluations[0].ability == "knowledge"
+        assert card.capability_evaluations[0].alt_prompting_description == "5-Shot CoT"
+        assert len(card.safety_evaluations) == 1
+        assert card.developer_footnotes is not None
+
+    def test_evalcard_defaults_to_empty(self) -> None:
+        card = EvalCardMetadata()
+
+        assert card.modalities_input == []
+        assert card.modalities_output == []
+        assert card.languages_count is None
+        assert card.languages == []
+        assert card.capability_evaluations == []
+        assert card.safety_evaluations == []
+        assert card.developer_footnotes is None
+
+    def test_evalcard_serialization_excludes_none(self) -> None:
+        card = EvalCardMetadata(
+            modalities_input=["text"],
+            languages_count=1,
+            languages=["en"],
+        )
+        dumped = card.model_dump(exclude_none=True)
+
+        assert "modalities_input" in dumped
+        assert "developer_footnotes" not in dumped
+
+    def test_evalcard_roundtrip(self) -> None:
+        card = EvalCardMetadata(
+            modalities_input=["text", "image"],
+            modalities_output=["text"],
+            languages_count=2,
+            languages=["en", "es"],
+            capability_evaluations=[
+                CapabilityEvalEntry(
+                    ability="reasoning", benchmark="BBH", metric="exact_match"
+                ),
+            ],
+        )
+        dumped = card.model_dump(exclude_none=True)
+        restored = EvalCardMetadata(**dumped)
+
+        assert restored.modalities_input == card.modalities_input
+        assert len(restored.capability_evaluations) == 1
+        assert restored.capability_evaluations[0].ability == "reasoning"
+
+
+class TestEnvironmentCardMetadata:
+    """Tests for EnvironmentCardMetadata model."""
+
+    def test_creating_envcard_with_hardware_fields(self) -> None:
+        card = EnvironmentCardMetadata(
+            gpu_model="NVIDIA A100-SXM4-80GB",
+            gpu_count=4,
+            gpu_driver_version="535.104.05",
+            python_version="3.11.5",
+            os_info="Linux-5.14.0",
+        )
+
+        assert card.gpu_model == "NVIDIA A100-SXM4-80GB"
+        assert card.gpu_count == 4
+        assert card.python_version == "3.11.5"
+
+    def test_envcard_defaults_to_empty(self) -> None:
+        card = EnvironmentCardMetadata()
+
+        assert card.gpu_model is None
+        assert card.key_packages == {}
+        assert card.k8s_pod_labels == {}
+        assert card.model_id is None
+        assert card.capture_completeness is None
+
+    def test_envcard_capture_returns_valid_card(self) -> None:
+        card = EnvironmentCardMetadata.capture(
+            framework_name="test-framework",
+            framework_version="1.0.0",
+        )
+
+        assert card.python_version is not None
+        assert card.os_info is not None
+        assert card.framework_name == "test-framework"
+        assert card.framework_version == "1.0.0"
+        assert card.capture_completeness is not None
+        assert 0.0 <= card.capture_completeness <= 1.0
+
+    def test_envcard_capture_with_extra_packages(self) -> None:
+        card = EnvironmentCardMetadata.capture(extra_packages=["pydantic"])
+
+        assert "pydantic" in card.key_packages
+
+    def test_envcard_capture_with_custom_kwargs(self) -> None:
+        card = EnvironmentCardMetadata.capture(custom_field="custom_value")
+
+        assert card.custom["custom_field"] == "custom_value"
+
+    def test_envcard_completeness_scoring(self) -> None:
+        empty_card = EnvironmentCardMetadata()
+        assert empty_card._compute_completeness() == 0.0
+
+        partial_card = EnvironmentCardMetadata(
+            python_version="3.11.5",
+            os_info="Linux",
+            framework_name="lm-eval",
+        )
+        score = partial_card._compute_completeness()
+        assert score == round(3 / 26, 2)
+
+    def test_envcard_serialization_roundtrip(self) -> None:
+        card = EnvironmentCardMetadata(
+            python_version="3.11.5",
+            gpu_model="A100",
+            gpu_count=2,
+            key_packages={"torch": "2.1.0"},
+            capture_completeness=0.15,
+        )
+        dumped = card.model_dump(exclude_none=True)
+        restored = EnvironmentCardMetadata(**dumped)
+
+        assert restored.python_version == "3.11.5"
+        assert restored.gpu_count == 2
+        assert restored.key_packages["torch"] == "2.1.0"
+        assert restored.capture_completeness == 0.15
+
+
+class TestJobResultsWithCards:
+    """Tests for JobResults with card fields."""
+
+    def test_job_results_with_evalcard(self) -> None:
+        results = JobResults(
+            id="test-job",
+            benchmark_id="mmlu",
+            benchmark_index=0,
+            model_name="model",
+            results=[],
+            num_examples_evaluated=100,
+            duration_seconds=60.0,
+            eval_card=EvalCardMetadata(
+                modalities_input=["text"],
+                modalities_output=["text"],
+            ),
+        )
+
+        assert results.eval_card is not None
+        assert results.eval_card.modalities_input == ["text"]
+
+    def test_job_results_with_envcard(self) -> None:
+        results = JobResults(
+            id="test-job",
+            benchmark_id="mmlu",
+            benchmark_index=0,
+            model_name="model",
+            results=[],
+            num_examples_evaluated=100,
+            duration_seconds=60.0,
+            env_card=EnvironmentCardMetadata(python_version="3.11.5"),
+        )
+
+        assert results.env_card is not None
+        assert results.env_card.python_version == "3.11.5"
+
+    def test_job_results_cards_default_to_none(self) -> None:
+        results = JobResults(
+            id="test-job",
+            benchmark_id="mmlu",
+            benchmark_index=0,
+            model_name="model",
+            results=[],
+            num_examples_evaluated=100,
+            duration_seconds=60.0,
+        )
+
+        assert results.eval_card is None
+        assert results.env_card is None

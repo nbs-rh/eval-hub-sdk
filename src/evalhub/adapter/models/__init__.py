@@ -1,6 +1,12 @@
 """Adapter models for the simplified BYOF SDK."""
 
 from .adapter import FrameworkAdapter
+from .cards import (
+    CapabilityEvalEntry,
+    EnvironmentCardMetadata,
+    EvalCardMetadata,
+    SafetyEvalEntry,
+)
 from .job import (
     ErrorInfo,
     JobCallbacks,
@@ -16,6 +22,11 @@ from .job import (
 __all__ = [
     # Core adapter
     "FrameworkAdapter",
+    # Card metadata
+    "CapabilityEvalEntry",
+    "SafetyEvalEntry",
+    "EvalCardMetadata",
+    "EnvironmentCardMetadata",
     # Job models
     "JobSpec",
     "JobCallbacks",

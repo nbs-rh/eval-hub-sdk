@@ -12,6 +12,7 @@ from ..models.api import JobStatus
 from .config import EvalHubMode, MlflowBackend
 from .mlflow import MlflowArtifact
 from .models import (
+    EnvironmentCardMetadata,
     JobCallbacks,
     JobResults,
     JobSpec,
@@ -103,6 +104,54 @@ class _MlflowOps:
         ]
         if results.overall_score is not None:
             metrics.append(Metric("overall_score", results.overall_score))
+
+        # EvalCard → MLflow params
+        if results.eval_card:
+            ec = results.eval_card
+            if ec.languages_count is not None:
+                params.append(
+                    Param("eval_card.languages_count", str(ec.languages_count))
+                )
+            if ec.languages:
+                params.append(Param("eval_card.languages", ",".join(ec.languages)))
+            if ec.modalities_input:
+                params.append(
+                    Param("eval_card.modalities_input", ",".join(ec.modalities_input))
+                )
+            if ec.capability_evaluations:
+                first = ec.capability_evaluations[0]
+                params.append(Param("eval_card.primary_ability", first.ability))
+                params.append(Param("eval_card.primary_benchmark", first.benchmark))
+
+        # Environment Card → MLflow params
+        if results.env_card:
+            env = results.env_card
+            for field in (
+                "python_version",
+                "framework_name",
+                "framework_version",
+                "cuda_version",
+                "gpu_model",
+                "gpu_driver_version",
+                "os_info",
+                "container_image",
+                "model_id",
+                "model_version",
+                "model_provider",
+                "dataset_hash",
+            ):
+                val = getattr(env, field, None)
+                if val is not None:
+                    params.append(Param(f"env_card.{field}", str(val)))
+            if env.gpu_count is not None:
+                params.append(Param("env_card.gpu_count", str(env.gpu_count)))
+            if env.key_packages:
+                import json
+
+                params.append(
+                    Param("env_card.key_packages", json.dumps(env.key_packages))
+                )
+
         return params, metrics
 
     def _save_odh(
@@ -571,10 +620,25 @@ class DefaultCallbacks(JobCallbacks):
         """Report final evaluation results to evalhub or log them.
 
         This sends the complete results including metrics to the evalhub service.
+        If the provider did not supply an Environment Card, a best-effort card
+        is auto-captured from the current runtime.
 
         Args:
             results: Final job results to report
         """
+        # Resolve the Environment Card without mutating the caller's results object.
+        # If the provider did not supply one, capture a best-effort card locally.
+        env_card = results.env_card
+        if env_card is None:
+            try:
+                env_card = EnvironmentCardMetadata.capture()
+                logger.info(
+                    "Environment Card auto-captured (completeness: %.0f%%)",
+                    (env_card.capture_completeness or 0) * 100,
+                )
+            except Exception:
+                logger.debug("Environment Card auto-capture failed", exc_info=True)
+
         # If evalhub available, send results with completed status event
         if self.sidecar_url and self._httpx_available and self._http_client:
             try:
@@ -607,12 +671,22 @@ class DefaultCallbacks(JobCallbacks):
                 if results.mlflow_run_id:
                     status_event["mlflow_run_id"] = results.mlflow_run_id
 
-                # Include OCI artifact reference if available
+                # Build artifacts dict: OCI first, then card metadata
+                artifacts: dict[str, Any] = {}
                 if results.oci_artifact:
-                    status_event["artifacts"] = {
-                        "oci_reference": results.oci_artifact.reference,
-                        "oci_digest": results.oci_artifact.digest,
-                    }
+                    artifacts["oci_reference"] = results.oci_artifact.reference
+                    artifacts["oci_digest"] = results.oci_artifact.digest
+                if results.eval_card:
+                    artifacts["evalhub.eval_card"] = results.eval_card.model_dump(
+                        exclude_none=True
+                    )
+                if env_card:
+                    artifacts["evalhub.env_card"] = env_card.model_dump(
+                        exclude_none=True
+                    )
+
+                if artifacts:
+                    status_event["artifacts"] = artifacts
 
                 data = {"benchmark_status_event": status_event}
                 logger.debug("Events report_results body: %s", data)

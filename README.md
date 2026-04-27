@@ -78,7 +78,9 @@ The SDK is organized into distinct, focused packages:
 2. **FrameworkAdapter** - Base class that implements `run_benchmark_job()` method
 3. **JobCallbacks** - Interface for reporting status and persisting artifacts
 4. **JobResults** - Evaluation results returned when job completes
-5. **Sidecar** - Container that handles service communication (provided by platform)
+5. **EvalCardMetadata** - Standardized evaluation disclosure (Dhar et al., arXiv:2511.21695): modalities, languages, capability and safety evaluations
+6. **EnvironmentCardMetadata** - Operational context of an evaluation run: hardware, software, Kubernetes, model identity, and run provenance
+7. **Sidecar** - Container that handles service communication (provided by platform)
 
 ## Quick Start
 
@@ -320,6 +322,10 @@ from evalhub.adapter import (
     JobStatusUpdate,
     EvaluationResult,
     OCIArtifactSpec,
+    # Card metadata (optional — auto-capture provides a baseline)
+    CapabilityEvalEntry,
+    EvalCardMetadata,
+    EnvironmentCardMetadata,
 )
 ```
 
@@ -476,6 +482,47 @@ class JobResults(BaseModel):
     duration_seconds: float                   # Total evaluation time
     evaluation_metadata: Dict[str, Any]       # Framework-specific metadata
     oci_artifact: Optional[OCIArtifactResult] # OCI artifact info if persisted
+    eval_card: Optional[EvalCardMetadata]     # EvalCard disclosure metadata
+    env_card: Optional[EnvironmentCardMetadata] # Environment Card metadata
+```
+
+**EvalCard & Environment Card** - Evaluation documentation artifacts:
+
+EvalCards and Environment Cards are serialized into the `artifacts` dict on
+`report_results()` and stored by the server — no server changes required.
+
+If a provider does not set `env_card`, `report_results()` auto-captures a
+best-effort Environment Card from the runtime (Python version, OS, GPU info,
+installed packages). The `capture_completeness` field (0.0–1.0) reports how
+many of the 26 spec fields were populated.
+
+```python
+# Explicit capture at job start (recommended — captures hardware before eval load)
+env_card = EnvironmentCardMetadata.capture(
+    framework_name="lm-evaluation-harness",
+    framework_version="0.4.5",
+)
+
+# EvalCard with capability and safety evaluations
+eval_card = EvalCardMetadata(
+    modalities_input=["text"],
+    modalities_output=["text"],
+    languages_count=1,
+    languages=["en"],
+    capability_evaluations=[
+        CapabilityEvalEntry(
+            ability="knowledge",
+            benchmark="MMLU",
+            metric="exact_match",
+            alt_prompting=0.712,
+            alt_prompting_description="5-Shot",
+        ),
+    ],
+)
+
+# Attach to results before reporting
+results = JobResults(..., eval_card=eval_card, env_card=env_card)
+callbacks.report_results(results)
 ```
 
 ## Deployment

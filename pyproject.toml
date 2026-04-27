@@ -159,6 +159,9 @@ module = [
     "olot",
     "mcp",
     "mcp.*",
+    # Optional runtime deps detected by EnvironmentCardMetadata.capture()
+    "torch",
+    "torch.*",
     # Optional auth/cloud deps used by transitive deps (no stubs needed)
     "google.*",
     "databricks.*",

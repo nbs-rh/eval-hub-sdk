@@ -76,7 +76,10 @@ from .auth import ModelCredentials, read_model_auth_key, resolve_model_credentia
 from .callbacks import DefaultCallbacks
 from .config import MlflowBackend, get_job_spec_path
 from .models import (
+    CapabilityEvalEntry,
+    EnvironmentCardMetadata,
     ErrorInfo,
+    EvalCardMetadata,
     FrameworkAdapter,
     JobCallbacks,
     JobPhase,
@@ -86,6 +89,7 @@ from .models import (
     MessageInfo,
     OCIArtifactResult,
     OCIArtifactSpec,
+    SafetyEvalEntry,
 )
 from .oci import OCIArtifactPersister
 from .settings import AdapterSettings
@@ -96,6 +100,11 @@ from .settings import AdapterSettings
 __all__ = [
     # Core adapter interface
     "FrameworkAdapter",
+    # Card metadata
+    "CapabilityEvalEntry",
+    "SafetyEvalEntry",
+    "EvalCardMetadata",
+    "EnvironmentCardMetadata",
     # Job models
     "JobSpec",
     "JobCallbacks",

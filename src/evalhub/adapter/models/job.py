@@ -12,6 +12,7 @@ from typing import Any, Self
 from pydantic import BaseModel, Field
 
 from ...models.api import EvaluationResult, JobStatus, ModelConfig, OCICoordinates
+from .cards import EnvironmentCardMetadata, EvalCardMetadata
 
 
 class MessageInfo(BaseModel):
@@ -263,6 +264,16 @@ class JobResults(BaseModel):
     mlflow_run_id: str | None = Field(
         default=None,
         description="Optional MLflow run id included on the terminal results event when set",
+    )
+
+    # Card metadata (optional, serialized into artifacts on report_results)
+    eval_card: EvalCardMetadata | None = Field(
+        default=None,
+        description="EvalCard disclosure metadata. Serialized into artifacts['evalhub.eval_card'].",
+    )
+    env_card: EnvironmentCardMetadata | None = Field(
+        default=None,
+        description="Environment Card metadata. Serialized into artifacts['evalhub.env_card'].",
     )
 
 
