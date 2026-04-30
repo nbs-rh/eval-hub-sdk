@@ -357,7 +357,7 @@ class TestEvalRun:
         assert "Job submitted: eval-123" in result.output
         req = mock_client.jobs.submit.call_args[0][0]
         assert req.benchmarks[0].parameters["tokenizer"] == "my-tokenizer"
-        assert req.benchmarks[0].parameters["batch_size"] == "3"
+        assert req.benchmarks[0].parameters["batch_size"] == 3
 
     def test_run_with_param_short_flag(
         self, runner: CliRunner, config_file: Path, mock_client: MagicMock
@@ -440,6 +440,50 @@ class TestEvalRun:
         assert result.exit_code == 0
         req = mock_client.jobs.submit.call_args[0][0]
         assert req.benchmarks[0].parameters["url"] == "http://example.com?a=1&b=2"
+
+    def test_run_param_type_coercion(
+        self, runner: CliRunner, config_file: Path, mock_client: MagicMock
+    ) -> None:
+        mock_client.jobs.submit.return_value = _make_job()
+        with patch("evalhub.cli.main.get_client", return_value=mock_client):
+            result = runner.invoke(
+                main,
+                [
+                    "eval",
+                    "run",
+                    "--name",
+                    "param-eval",
+                    "--model-url",
+                    "http://vllm:8000/v1",
+                    "--model-name",
+                    "llama3",
+                    "--provider",
+                    "lm_eval",
+                    "-b",
+                    "mmlu",
+                    "--param",
+                    "num_examples=5",
+                    "--param",
+                    "temperature=0.7",
+                    "--param",
+                    "use_cache=true",
+                    "--param",
+                    "verbose=false",
+                    "--param",
+                    "tokenizer=my-tokenizer",
+                ],
+            )
+        assert result.exit_code == 0
+        req = mock_client.jobs.submit.call_args[0][0]
+        params = req.benchmarks[0].parameters
+        assert params["num_examples"] == 5
+        assert isinstance(params["num_examples"], int)
+        assert params["temperature"] == 0.7
+        assert isinstance(params["temperature"], float)
+        assert params["use_cache"] is True
+        assert params["verbose"] is False
+        assert params["tokenizer"] == "my-tokenizer"
+        assert isinstance(params["tokenizer"], str)
 
     def test_run_json_output(
         self,

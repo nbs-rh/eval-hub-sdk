@@ -120,6 +120,23 @@ def eval() -> None:
     """
 
 
+def _coerce_param_value(value: str) -> Any:
+    """Coerce a CLI parameter string to its most appropriate Python type."""
+    if value.lower() in ("true", "false"):
+        return value.lower() == "true"
+    if value.lower() in ("null", "none"):
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    try:
+        return float(value)
+    except ValueError:
+        pass
+    return value
+
+
 def _load_config_file(path: str) -> dict[str, Any]:
     """Load a YAML or JSON config file for eval run."""
     with open(path) as f:
@@ -146,7 +163,7 @@ def _build_request_from_flags(
     dataset: str | None,
     experiment: ExperimentConfig | None = None,
     exports: EvaluationExports | None = None,
-    extra_params: dict[str, str] | None = None,
+    extra_params: dict[str, Any] | None = None,
 ) -> JobSubmissionRequest:
     """Build a JobSubmissionRequest from CLI flags."""
     parameters: dict[str, Any] = {}
@@ -318,14 +335,14 @@ def eval_run(
                     k8s=k8s,
                 )
             )
-        extra_params: dict[str, str] = {}
+        extra_params: dict[str, Any] = {}
         for p in params:
             if "=" not in p:
                 raise click.ClickException(
                     f"Invalid --param format: {p!r}. Expected key=value."
                 )
             key, value = p.split("=", 1)
-            extra_params[key] = value
+            extra_params[key] = _coerce_param_value(value)
         request = _build_request_from_flags(
             name=cast(str, name),
             model_url=cast(str, model_url),
