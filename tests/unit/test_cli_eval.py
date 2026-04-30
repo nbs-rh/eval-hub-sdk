@@ -475,15 +475,48 @@ class TestEvalRun:
             )
         assert result.exit_code == 0
         req = mock_client.jobs.submit.call_args[0][0]
+        assert req.num_examples == 5
+        assert isinstance(req.num_examples, int)
         params = req.benchmarks[0].parameters
-        assert params["num_examples"] == 5
-        assert isinstance(params["num_examples"], int)
+        assert "num_examples" not in params
         assert params["temperature"] == 0.7
         assert isinstance(params["temperature"], float)
         assert params["use_cache"] is True
         assert params["verbose"] is False
         assert params["tokenizer"] == "my-tokenizer"
         assert isinstance(params["tokenizer"], str)
+
+    def test_run_num_examples_on_request(
+        self, runner: CliRunner, config_file: Path, mock_client: MagicMock
+    ) -> None:
+        mock_client.jobs.submit.return_value = _make_job()
+        with patch("evalhub.cli.main.get_client", return_value=mock_client):
+            result = runner.invoke(
+                main,
+                [
+                    "eval",
+                    "run",
+                    "--name",
+                    "num-ex-eval",
+                    "--model-url",
+                    "http://vllm:8000/v1",
+                    "--model-name",
+                    "llama3",
+                    "--provider",
+                    "lm_eval",
+                    "-b",
+                    "mmlu",
+                    "--param",
+                    "num_examples=10",
+                    "--param",
+                    "tokenizer=my-tok",
+                ],
+            )
+        assert result.exit_code == 0
+        req = mock_client.jobs.submit.call_args[0][0]
+        assert req.num_examples == 10
+        assert "num_examples" not in req.benchmarks[0].parameters
+        assert req.benchmarks[0].parameters["tokenizer"] == "my-tok"
 
     def test_run_json_output(
         self,

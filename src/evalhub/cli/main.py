@@ -152,6 +152,9 @@ def _load_config_file(path: str) -> dict[str, Any]:
     return data
 
 
+_REQUEST_LEVEL_PARAMS = {"num_examples"}
+
+
 def _build_request_from_flags(
     name: str,
     model_url: str,
@@ -167,8 +170,13 @@ def _build_request_from_flags(
 ) -> JobSubmissionRequest:
     """Build a JobSubmissionRequest from CLI flags."""
     parameters: dict[str, Any] = {}
+    request_kwargs: dict[str, Any] = {}
     if extra_params:
-        parameters.update(extra_params)
+        for key, value in extra_params.items():
+            if key in _REQUEST_LEVEL_PARAMS:
+                request_kwargs[key] = value
+            else:
+                parameters[key] = value
     if metrics:
         parameters["metrics"] = list(metrics)
     if dataset:
@@ -184,6 +192,7 @@ def _build_request_from_flags(
         benchmarks=benchmarks,
         experiment=experiment,
         exports=exports,
+        **request_kwargs,
     )
 
 
