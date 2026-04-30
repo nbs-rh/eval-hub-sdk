@@ -475,10 +475,9 @@ class TestEvalRun:
             )
         assert result.exit_code == 0
         req = mock_client.jobs.submit.call_args[0][0]
-        assert req.num_examples == 5
-        assert isinstance(req.num_examples, int)
         params = req.benchmarks[0].parameters
         assert params["num_examples"] == 5
+        assert isinstance(params["num_examples"], int)
         assert params["temperature"] == 0.7
         assert isinstance(params["temperature"], float)
         assert params["use_cache"] is True
@@ -486,7 +485,7 @@ class TestEvalRun:
         assert params["tokenizer"] == "my-tokenizer"
         assert isinstance(params["tokenizer"], str)
 
-    def test_run_num_examples_on_request(
+    def test_run_num_examples_in_benchmark_params(
         self, runner: CliRunner, config_file: Path, mock_client: MagicMock
     ) -> None:
         mock_client.jobs.submit.return_value = _make_job()
@@ -514,7 +513,6 @@ class TestEvalRun:
             )
         assert result.exit_code == 0
         req = mock_client.jobs.submit.call_args[0][0]
-        assert req.num_examples == 10
         assert req.benchmarks[0].parameters["num_examples"] == 10
         assert req.benchmarks[0].parameters["tokenizer"] == "my-tok"
 

@@ -350,10 +350,6 @@ class JobSubmissionRequest(BaseModel):
         default=None,
         description="Optional exports configuration (e.g., OCI artifact persistence)",
     )
-    num_examples: int | None = Field(
-        default=None,
-        description="Number of examples to evaluate (None = all)",
-    )
 
     @model_validator(mode="after")
     def check_benchmarks_or_collection(self) -> "JobSubmissionRequest":
