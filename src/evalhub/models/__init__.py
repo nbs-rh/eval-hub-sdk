@@ -41,6 +41,8 @@ from .api import (
     ProviderList,
     QueueConfig,
     Resource,
+    S3TestDataRef,
+    TestDataRef,
 )
 
 __all__ = [
@@ -69,6 +71,8 @@ __all__ = [
     "Benchmark",
     "BenchmarkConfig",
     "BenchmarkInfo",
+    "S3TestDataRef",
+    "TestDataRef",
     "BenchmarkResult",
     "BenchmarksList",
     "BenchmarkReference",
