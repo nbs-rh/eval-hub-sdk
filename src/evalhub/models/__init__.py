@@ -3,6 +3,8 @@
 from .api import (
     Benchmark,
     BenchmarkConfig,
+    S3TestDataRef,
+    TestDataRef,
     BenchmarkInfo,
     BenchmarkReference,
     BenchmarkResult,
@@ -69,6 +71,8 @@ __all__ = [
     "Benchmark",
     "BenchmarkConfig",
     "BenchmarkInfo",
+    "S3TestDataRef",
+    "TestDataRef",
     "BenchmarkResult",
     "BenchmarksList",
     "BenchmarkReference",

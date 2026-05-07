@@ -233,6 +233,22 @@ class EvaluationJobResults(BaseModel):
     )
 
 
+class S3TestDataRef(BaseModel):
+    """S3 source for custom test data."""
+
+    bucket: str = Field(..., description="S3 bucket name")
+    key: str = Field(..., description="S3 object key or prefix")
+    secret_ref: str = Field(
+        ..., description="Kubernetes Secret name containing S3 credentials"
+    )
+
+
+class TestDataRef(BaseModel):
+    """Reference to an external test data source."""
+
+    s3: S3TestDataRef | None = Field(default=None, description="S3 data source")
+
+
 class BenchmarkConfig(BaseModel):
     """Benchmark configuration for job submission."""
 
@@ -240,6 +256,9 @@ class BenchmarkConfig(BaseModel):
     provider_id: str = Field(..., description="Provider identifier")
     parameters: dict[str, Any] = Field(
         default_factory=dict, description="Benchmark-specific parameters"
+    )
+    test_data_ref: TestDataRef | None = Field(
+        default=None, description="Reference to custom external test data"
     )
 
 

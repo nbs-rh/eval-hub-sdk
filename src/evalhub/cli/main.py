@@ -26,6 +26,8 @@ from evalhub.models import (
     OCIConnectionConfig,
     OCICoordinates,
     QueueConfig,
+    S3TestDataRef,
+    TestDataRef,
 )
 
 from . import config as cfg
@@ -166,6 +168,7 @@ def _build_request_from_flags(
     exports: EvaluationExports | None = None,
     extra_params: dict[str, Any] | None = None,
     queue: QueueConfig | None = None,
+    test_data_ref: TestDataRef | None = None,
 ) -> JobSubmissionRequest:
     """Build a JobSubmissionRequest from CLI flags."""
     parameters: dict[str, Any] = {}
@@ -176,7 +179,7 @@ def _build_request_from_flags(
     if dataset:
         parameters["dataset"] = dataset
     benchmarks = [
-        BenchmarkConfig(id=b, provider_id=provider, parameters=parameters)
+        BenchmarkConfig(id=b, provider_id=provider, parameters=parameters, test_data_ref=test_data_ref)
         for b in benchmark
     ]
     return JobSubmissionRequest(
@@ -249,6 +252,21 @@ def _build_request_from_flags(
     help="Kueue LocalQueue name for workload scheduling (inline flags only).",
 )
 @click.option(
+    "--test-data-s3-bucket",
+    default=None,
+    help="S3 bucket name for custom test data (inline flags only).",
+)
+@click.option(
+    "--test-data-s3-key",
+    default=None,
+    help="S3 object key or prefix for custom test data (inline flags only).",
+)
+@click.option(
+    "--test-data-s3-secret",
+    default=None,
+    help="Kubernetes Secret name with S3 credentials for custom test data (inline flags only).",
+)
+@click.option(
     "--wait", "wait_for", is_flag=True, default=False, help="Block until job completes."
 )
 @click.option(
@@ -281,6 +299,9 @@ def eval_run(
     oci_repository: str | None,
     oci_connection: str | None,
     queue: str | None,
+    test_data_s3_bucket: str | None,
+    test_data_s3_key: str | None,
+    test_data_s3_secret: str | None,
     wait_for: bool,
     timeout: float | None,
     poll_interval: float,
@@ -310,6 +331,10 @@ def eval_run(
       evalhub eval run --name my-eval --model-url http://vllm:8000/v1 \\
           --model-name llama3 --provider lm_evaluation_harness -b mmlu \\
           --queue my-local-queue
+      evalhub eval run --name my-eval --model-url http://vllm:8000/v1 \\
+          --model-name llama3 --provider lm_evaluation_harness -b your_benchmark_id \\
+          --test-data-s3-bucket evalhub-test --test-data-s3-key dataset/ \\
+          --test-data-s3-secret evalhub-s3-credentials
     """
     client = get_client(ctx)
 
@@ -358,6 +383,21 @@ def eval_run(
         queue_config: QueueConfig | None = None
         if queue:
             queue_config = QueueConfig(name=queue)
+        s3_flags = (test_data_s3_bucket, test_data_s3_key, test_data_s3_secret)
+        if any(s3_flags) and not all(s3_flags):
+            raise click.ClickException(
+                "S3 test data requires --test-data-s3-bucket, --test-data-s3-key, "
+                "and --test-data-s3-secret to all be specified."
+            )
+        test_data_ref: TestDataRef | None = None
+        if all(s3_flags):
+            test_data_ref = TestDataRef(
+                s3=S3TestDataRef(
+                    bucket=cast(str, test_data_s3_bucket),
+                    key=cast(str, test_data_s3_key),
+                    secret_ref=cast(str, test_data_s3_secret),
+                )
+            )
         request = _build_request_from_flags(
             name=cast(str, name),
             model_url=cast(str, model_url),
@@ -371,6 +411,7 @@ def eval_run(
             exports=exports,
             extra_params=extra_params,
             queue=queue_config,
+            test_data_ref=test_data_ref,
         )
 
     job = client.jobs.submit(request)
