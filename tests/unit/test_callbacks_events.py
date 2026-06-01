@@ -157,6 +157,7 @@ def test_mlflow_save_returns_run_id_from_upstream_path() -> None:
     assert rid == "run-upstream"
     m.assert_called_once()
 
+@pytest.mark.unit
 def test_mlflow_save_posts_failed_event_on_mlflow_error() -> None:
     mock_http = MagicMock()
     resp = MagicMock()
