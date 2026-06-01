@@ -157,6 +157,7 @@ def test_mlflow_save_returns_run_id_from_upstream_path() -> None:
     assert rid == "run-upstream"
     m.assert_called_once()
 
+
 @pytest.mark.unit
 def test_mlflow_save_posts_failed_event_on_mlflow_error() -> None:
     mock_http = MagicMock()
@@ -191,6 +192,7 @@ def test_mlflow_save_posts_failed_event_on_mlflow_error() -> None:
     assert body["error_message"]["message_code"] == "mlflow_save_failed"
     assert "mlflow offline" not in body["error_message"]["message"]
     assert "warning_message" not in body
+
 
 def test_build_run_name_format() -> None:
     from evalhub.adapter.callbacks import _MlflowOps
