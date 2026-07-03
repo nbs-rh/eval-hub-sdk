@@ -33,14 +33,12 @@ OPTIONAL_KEYS = (
     "provider",
     "insecure",
     "timeout",
-    "mcp_transport",
-    "mcp_host",
-    "mcp_port",
+    "mcp_config_file",
     "server_config_file",
 )
 KNOWN_KEYS = set(REQUIRED_KEYS) | set(OPTIONAL_KEYS)
 SENSITIVE_KEYS = frozenset({"token"})
-FILE_KEYS = frozenset({"server_config_file"})
+FILE_KEYS = frozenset({"mcp_config_file", "server_config_file"})
 
 DEFAULT_PROFILE = "default"
 
@@ -52,6 +50,13 @@ def mask_value(
     if len(value) < min_len:
         return "***"
     return f"{value[:prefix_len]}***{value[-suffix_len:]}"
+
+
+def mask_mapping(mapping: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of *mapping* with sensitive values masked."""
+    return {
+        k: mask_value(str(v)) if k in SENSITIVE_KEYS else v for k, v in mapping.items()
+    }
 
 
 def _config_path() -> Path:
@@ -154,6 +159,7 @@ def is_file_key(key: str) -> bool:
 
 
 _FILE_KEY_STORE_DIRS: dict[str, Path] = {
+    "mcp_config_file": DEFAULT_CONFIG_DIR / "mcp",
     "server_config_file": DEFAULT_CONFIG_DIR / "server",
 }
 
@@ -203,6 +209,16 @@ def remove_file_key(key: str, profile_name: str) -> None:
         pass
 
 
+def resolve_component_config_dir(
+    data: dict[str, Any],
+    state_dir: Path,
+    profile: str | None = None,
+) -> Path:
+    """Return the config directory for a component (MCP, server, etc.)."""
+    profile_name = profile or get_active_profile(data)
+    return state_dir / profile_name
+
+
 def set_active_profile(data: dict[str, Any], profile: str) -> dict[str, Any]:
     """Switch the active profile."""
     data["active_profile"] = profile
@@ -214,22 +230,3 @@ def parse_bool(value: Any, *, default: bool = False) -> bool:
     if value is None:
         return default
     return str(value).lower() in ("true", "1", "yes")
-
-
-def build_mcp_config(
-    profile: dict[str, Any], *, default_transport: str = "http"
-) -> dict[str, Any]:
-    """Build the Go MCP binary config dict from a CLI profile."""
-    try:
-        port = int(profile.get("mcp_port", 3001))
-    except (TypeError, ValueError):
-        port = 3001
-    return {
-        "base_url": profile.get("base_url", "http://localhost:8080"),
-        "token": profile.get("token", ""),
-        "tenant": profile.get("tenant", ""),
-        "insecure": parse_bool(profile.get("insecure")),
-        "transport": profile.get("mcp_transport", default_transport),
-        "host": profile.get("mcp_host", "localhost"),
-        "port": port,
-    }
