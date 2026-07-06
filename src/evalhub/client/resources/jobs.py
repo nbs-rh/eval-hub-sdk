@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import AsyncIterator, Iterator
 
 import httpx
 
@@ -19,6 +20,14 @@ from ..base import (
     BaseSyncClient,
     JobCanNotBeCancelledError,
     JobNotFoundError,
+)
+from ..job_logs import (
+    JobLogOptions,
+    JobLogUpdate,
+    fetch_job_logs,
+    fetch_job_logs_sync,
+    is_terminal_job,
+    log_delta,
 )
 
 logger = logging.getLogger(__name__)
@@ -188,6 +197,96 @@ class AsyncJobsResource:
 
             await asyncio.sleep(poll_interval)
 
+    async def get_logs(
+        self,
+        job_id: str,
+        *,
+        benchmark_index: int | None = None,
+        options: JobLogOptions | None = None,
+        tenant: str | None = None,
+    ) -> str:
+        """Fetch evaluation job logs as plain text.
+
+        Args:
+            job_id: The job identifier
+            benchmark_index: When set, fetch logs for a single benchmark index
+            options: Log query options (tail_lines, timestamps, etc.)
+            tenant: Tenant override for this request (default: client-level tenant)
+
+        Returns:
+            str: Plain-text job logs
+
+        Raises:
+            httpx.HTTPError: If request fails
+        """
+        return await fetch_job_logs(
+            self._client,
+            job_id,
+            benchmark_index=benchmark_index,
+            options=options,
+            tenant=tenant,
+        )
+
+    async def watch_logs(
+        self,
+        job_id: str,
+        *,
+        benchmark_index: int | None = None,
+        options: JobLogOptions | None = None,
+        poll_interval: float = 2.0,
+        timeout: float | None = None,
+        tenant: str | None = None,
+    ) -> AsyncIterator[JobLogUpdate]:
+        """Stream job logs while polling status until the job completes.
+
+        The EvalHub server returns on-demand log snapshots, so this method
+        polls ``get_logs`` and ``get`` until the job reaches a terminal state.
+        Each yielded :class:`JobLogUpdate` contains only new log content since
+        the previous poll (which may be empty) and the current job status.
+
+        Args:
+            job_id: The job identifier
+            benchmark_index: When set, watch logs for a single benchmark index
+            options: Log query options (tail_lines, timestamps, etc.)
+            poll_interval: Seconds between status and log polls
+            timeout: Maximum time to watch in seconds (optional)
+            tenant: Tenant override for this request (default: client-level tenant)
+
+        Yields:
+            JobLogUpdate: Incremental log content and current job status
+
+        Raises:
+            TimeoutError: If the job does not complete within timeout
+            httpx.HTTPError: If request fails
+        """
+        start_time = time.time()
+        seen = ""
+        log_options = options or JobLogOptions()
+
+        while True:
+            job = await self.get(job_id, tenant=tenant)
+            logs = await self.get_logs(
+                job_id,
+                benchmark_index=benchmark_index,
+                options=log_options,
+                tenant=tenant,
+            )
+            delta = log_delta(seen, logs)
+            if logs:
+                seen = logs
+            yield JobLogUpdate(logs=delta, job=job)
+
+            if is_terminal_job(job):
+                return
+
+            if timeout is not None and (time.time() - start_time) > timeout:
+                raise TimeoutError(
+                    f"Job {job_id} did not complete within {timeout} seconds "
+                    "while watching logs"
+                )
+
+            await asyncio.sleep(poll_interval)
+
 
 class SyncJobsResource:
     """Synchronous resource for evaluation job operations."""
@@ -349,6 +448,96 @@ class SyncJobsResource:
             if timeout and (time.time() - start_time) > timeout:
                 raise TimeoutError(
                     f"Job {job_id} did not complete within {timeout} seconds"
+                )
+
+            time.sleep(poll_interval)
+
+    def get_logs(
+        self,
+        job_id: str,
+        *,
+        benchmark_index: int | None = None,
+        options: JobLogOptions | None = None,
+        tenant: str | None = None,
+    ) -> str:
+        """Fetch evaluation job logs as plain text.
+
+        Args:
+            job_id: The job identifier
+            benchmark_index: When set, fetch logs for a single benchmark index
+            options: Log query options (tail_lines, timestamps, etc.)
+            tenant: Tenant override for this request (default: client-level tenant)
+
+        Returns:
+            str: Plain-text job logs
+
+        Raises:
+            httpx.HTTPError: If request fails
+        """
+        return fetch_job_logs_sync(
+            self._client,
+            job_id,
+            benchmark_index=benchmark_index,
+            options=options,
+            tenant=tenant,
+        )
+
+    def watch_logs(
+        self,
+        job_id: str,
+        *,
+        benchmark_index: int | None = None,
+        options: JobLogOptions | None = None,
+        poll_interval: float = 2.0,
+        timeout: float | None = None,
+        tenant: str | None = None,
+    ) -> Iterator[JobLogUpdate]:
+        """Stream job logs while polling status until the job completes.
+
+        The EvalHub server returns on-demand log snapshots, so this method
+        polls ``get_logs`` and ``get`` until the job reaches a terminal state.
+        Each yielded :class:`JobLogUpdate` contains only new log content since
+        the previous poll (which may be empty) and the current job status.
+
+        Args:
+            job_id: The job identifier
+            benchmark_index: When set, watch logs for a single benchmark index
+            options: Log query options (tail_lines, timestamps, etc.)
+            poll_interval: Seconds between status and log polls
+            timeout: Maximum time to watch in seconds (optional)
+            tenant: Tenant override for this request (default: client-level tenant)
+
+        Yields:
+            JobLogUpdate: Incremental log content and current job status
+
+        Raises:
+            TimeoutError: If the job does not complete within timeout
+            httpx.HTTPError: If request fails
+        """
+        start_time = time.time()
+        seen = ""
+        log_options = options or JobLogOptions()
+
+        while True:
+            job = self.get(job_id, tenant=tenant)
+            logs = self.get_logs(
+                job_id,
+                benchmark_index=benchmark_index,
+                options=log_options,
+                tenant=tenant,
+            )
+            delta = log_delta(seen, logs)
+            if logs:
+                seen = logs
+            yield JobLogUpdate(logs=delta, job=job)
+
+            if is_terminal_job(job):
+                return
+
+            if timeout is not None and (time.time() - start_time) > timeout:
+                raise TimeoutError(
+                    f"Job {job_id} did not complete within {timeout} seconds "
+                    "while watching logs"
                 )
 
             time.sleep(poll_interval)
