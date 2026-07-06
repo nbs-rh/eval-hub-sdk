@@ -66,14 +66,12 @@ class TestJobLogHelpers:
             JobLogOptions(
                 tail_lines=250,
                 timestamps=True,
-                previous=True,
                 since_seconds=30,
             )
         )
         assert params == {
             "tail_lines": "250",
             "timestamps": "true",
-            "previous": "true",
             "since_seconds": "30",
         }
 

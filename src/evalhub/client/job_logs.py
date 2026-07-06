@@ -28,7 +28,6 @@ class JobLogOptions:
 
     tail_lines: int = DEFAULT_LOG_TAIL_LINES
     timestamps: bool = False
-    previous: bool = False
     since_seconds: int | None = None
 
     def __post_init__(self) -> None:
@@ -62,8 +61,6 @@ def build_log_query_params(options: JobLogOptions) -> dict[str, str]:
     params = {"tail_lines": str(options.tail_lines)}
     if options.timestamps:
         params["timestamps"] = "true"
-    if options.previous:
-        params["previous"] = "true"
     if options.since_seconds is not None:
         params["since_seconds"] = str(options.since_seconds)
     return params
