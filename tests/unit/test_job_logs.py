@@ -187,7 +187,10 @@ class TestAsyncJobLogs:
 
         with (
             patch.object(
-                resource, "get", side_effect=[running, completed], new_callable=AsyncMock
+                resource,
+                "get",
+                side_effect=[running, completed],
+                new_callable=AsyncMock,
             ) as mock_get,
             patch.object(
                 resource,

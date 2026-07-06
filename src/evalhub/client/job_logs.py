@@ -48,11 +48,13 @@ class JobLogUpdate:
 
 
 class _AsyncJobLogClient(Protocol):
-    async def _request_get(self, path: str, **kwargs: Any) -> Any: ...
+    async def _request_get(self, path: str, **kwargs: Any) -> Any:
+        ...
 
 
 class _SyncJobLogClient(Protocol):
-    def _request_get(self, path: str, **kwargs: Any) -> Any: ...
+    def _request_get(self, path: str, **kwargs: Any) -> Any:
+        ...
 
 
 def build_log_query_params(options: JobLogOptions) -> dict[str, str]:
