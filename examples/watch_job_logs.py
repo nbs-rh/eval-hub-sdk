@@ -107,7 +107,8 @@ def _build_parser() -> argparse.ArgumentParser:
 def _resolve_token(args: argparse.Namespace) -> str | None:
     if args.token_file:
         return Path(args.token_file).read_text().strip()
-    return args.token
+    token: str | None = args.token
+    return token
 
 
 def _create_client(args: argparse.Namespace) -> SyncEvalHubClient:
