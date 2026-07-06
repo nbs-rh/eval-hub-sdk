@@ -47,6 +47,7 @@ def _make_job(state: JobStatus) -> EvaluationJob:
     )
 
 
+@pytest.mark.unit
 class TestJobLogHelpers:
     def test_build_logs_path_job_level(self) -> None:
         assert build_logs_path("job-1") == "/evaluations/jobs/job-1/logs"
@@ -98,6 +99,7 @@ class TestJobLogHelpers:
         assert log_delta(seen, current) == expected
 
 
+@pytest.mark.unit
 class TestSyncJobLogs:
     def test_get_logs_calls_plain_text_endpoint(self) -> None:
         client = Mock()
@@ -160,6 +162,7 @@ class TestSyncJobLogs:
                 list(resource.watch_logs("job-1", poll_interval=0.01, timeout=1.0))
 
 
+@pytest.mark.unit
 class TestAsyncJobLogs:
     @pytest.mark.asyncio
     async def test_get_logs_calls_plain_text_endpoint(self) -> None:

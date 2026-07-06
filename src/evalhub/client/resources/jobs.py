@@ -182,12 +182,7 @@ class AsyncJobsResource:
 
             # Check if job is in a terminal state (also considers
             # benchmark-level completion when the server hasn't promoted it)
-            if job.effective_state in (
-                JobStatus.COMPLETED,
-                JobStatus.FAILED,
-                JobStatus.CANCELLED,
-                JobStatus.PARTIALLY_FAILED,
-            ):
+            if is_terminal_job(job):
                 return job
 
             if timeout and (time.time() - start_time) > timeout:
@@ -437,12 +432,7 @@ class SyncJobsResource:
 
             # Check if job is in a terminal state (also considers
             # benchmark-level completion when the server hasn't promoted it)
-            if job.effective_state in (
-                JobStatus.COMPLETED,
-                JobStatus.FAILED,
-                JobStatus.CANCELLED,
-                JobStatus.PARTIALLY_FAILED,
-            ):
+            if is_terminal_job(job):
                 return job
 
             if timeout and (time.time() - start_time) > timeout:
