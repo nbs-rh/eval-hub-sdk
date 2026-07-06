@@ -73,6 +73,29 @@ def build_logs_path(job_id: str, benchmark_index: int | None = None) -> str:
     return f"/evaluations/jobs/{job_id}/benchmarks/{benchmark_index}/logs"
 
 
+def _suffix_prefix_overlap(seen: str, current: str) -> int:
+    """Return length of the longest suffix of *seen* matching a prefix of *current*."""
+    if not seen or not current:
+        return 0
+    # KMP prefix function on current + sentinel + seen is O(len(seen) + len(current)).
+    combined = f"{current}\x00{seen}"
+    pi = _kmp_prefix_lengths(combined)
+    return min(pi[-1], len(current))
+
+
+def _kmp_prefix_lengths(text: str) -> list[int]:
+    """Build the KMP prefix-function (pi) table for *text*."""
+    pi = [0] * len(text)
+    for i in range(1, len(text)):
+        j = pi[i - 1]
+        while j > 0 and text[i] != text[j]:
+            j = pi[j - 1]
+        if text[i] == text[j]:
+            j += 1
+        pi[i] = j
+    return pi
+
+
 def log_delta(seen: str, current: str) -> str:
     """Return only the portion of *current* that has not been emitted yet."""
     if not current:
@@ -81,11 +104,8 @@ def log_delta(seen: str, current: str) -> str:
         return current
     if current.startswith(seen):
         return current[len(seen) :]
-    max_overlap = min(len(seen), len(current))
-    for overlap in range(max_overlap, 0, -1):
-        if seen[-overlap:] == current[:overlap]:
-            return current[overlap:]
-    return current
+    overlap = _suffix_prefix_overlap(seen, current)
+    return current[overlap:]
 
 
 def is_terminal_job(job: EvaluationJob) -> bool:
