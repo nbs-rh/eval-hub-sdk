@@ -34,6 +34,7 @@ import sys
 from pathlib import Path
 
 from evalhub import JobLogOptions, SyncEvalHubClient
+from evalhub.client.job_logs import TERMINAL_JOB_STATES
 from evalhub.models import JobStatus
 
 
@@ -156,6 +157,7 @@ def main() -> int:
         print(f"  tenant: {args.tenant}", file=sys.stderr)
 
     final_state: JobStatus | None = None
+    reached_terminal = False
     with _create_client(args) as client:
         try:
             for update in client.jobs.watch_logs(
@@ -168,11 +170,20 @@ def main() -> int:
                 if update.logs:
                     print(update.logs, end="", flush=True)
                 final_state = update.job.effective_state
+                reached_terminal = final_state in TERMINAL_JOB_STATES
+        except TimeoutError:
+            print("\nTimed out before job reached a terminal state.", file=sys.stderr)
         except KeyboardInterrupt:
             print("\nStopped.", file=sys.stderr)
             return 130
 
     print(file=sys.stderr)
+    if not reached_terminal:
+        print(
+            f"Watch ended before completion (last state: {final_state}).",
+            file=sys.stderr,
+        )
+        return 2
     print(f"Job finished with state: {final_state}", file=sys.stderr)
     if final_state == JobStatus.FAILED:
         return 1

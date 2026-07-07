@@ -18,34 +18,22 @@ evalhub config set tenant my-team --profile prod
 
 Using a CLI profile:
 
+When you submit a job:
+
+```shell
+uv run evalhub eval run --config eval.yaml --profile prod
+# → prints something like: Job submitted: 86c904cc-cdcf-452d-b9d8-754a7d6391ec
+```
+
 ```shell
 cd eval-hub-sdk
-uv run python examples/watch_job_logs.py eval-abc123 --profile prod
-```
-
-Using explicit flags / env vars:
-
-```shell
-export EVALHUB_BASE_URL=https://evalhub.apps.my-cluster.example.com
-export EVALHUB_TOKEN="$(oc whoami -t)"   # or your API token
-export EVALHUB_TENANT=my-team
-uv run python examples/watch_job_logs.py eval-abc123
-```
-
-OpenShift from inside the cluster (service account token):
-
-```shell
-uv run python examples/watch_job_logs.py eval-abc123 \
-  --base-url https://evalhub.evalhub.svc:8080 \
-  --token-file /var/run/secrets/kubernetes.io/serviceaccount/token \
-  --ca-bundle /var/run/secrets/kubernetes.io/serviceaccount/ca.crt \
-  --tenant default
+uv run python examples/watch_job_logs.py "<job_id>" --profile prod
 ```
 
 #### Useful flags
 
 ```shell
-uv run python examples/watch_job_logs.py eval-abc123 --profile prod \
+uv run python examples/watch_job_logs.py "<job_id>" --profile prod \
   --benchmark-index 0 \      # single benchmark only
   --tail-lines 500 \         # lines per poll
   --poll-interval 3 \        # seconds between polls
