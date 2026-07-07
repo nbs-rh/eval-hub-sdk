@@ -32,7 +32,9 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from typing import cast
 
+import httpx
 from evalhub import JobLogOptions, SyncEvalHubClient
 from evalhub.client.job_logs import TERMINAL_JOB_STATES
 from evalhub.models import JobStatus
@@ -108,8 +110,18 @@ def _build_parser() -> argparse.ArgumentParser:
 def _resolve_token(args: argparse.Namespace) -> str | None:
     if args.token_file:
         return Path(args.token_file).read_text().strip()
-    token: str | None = args.token
-    return token
+    return cast(str | None, args.token)
+
+
+def _resolve_base_url(args: argparse.Namespace, profile_name: str, prof: dict) -> str:
+    base_url = args.base_url or prof.get("base_url")
+    if not base_url:
+        raise SystemExit(
+            f"Missing base_url for profile {profile_name!r}. "
+            "Pass --base-url, set EVALHUB_BASE_URL, or run: "
+            "evalhub config set base_url <url>"
+        )
+    return str(base_url)
 
 
 def _create_client(args: argparse.Namespace) -> SyncEvalHubClient:
@@ -121,7 +133,7 @@ def _create_client(args: argparse.Namespace) -> SyncEvalHubClient:
         data = cfg.load_config()
         prof = cfg.get_profile(data, args.profile)
         return SyncEvalHubClient(
-            base_url=(args.base_url or prof.get("base_url", "http://localhost:8080")),
+            base_url=_resolve_base_url(args, args.profile, prof),
             auth_token=token or prof.get("token"),
             ca_bundle_path=args.ca_bundle,
             insecure=args.insecure or cfg.parse_bool(prof.get("insecure")),
@@ -173,6 +185,9 @@ def main() -> int:
                 reached_terminal = final_state in TERMINAL_JOB_STATES
         except TimeoutError:
             print("\nTimed out before job reached a terminal state.", file=sys.stderr)
+        except httpx.HTTPError as exc:
+            print(f"\nRequest failed: {exc}", file=sys.stderr)
+            return 3
         except KeyboardInterrupt:
             print("\nStopped.", file=sys.stderr)
             return 130
