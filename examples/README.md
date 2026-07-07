@@ -8,10 +8,12 @@ The script streams new log lines to stdout and prints the final job state to std
 
 ### 1. Configure a profile (optional, reusable)
 
+This is for the current user in namespace (tenant) `my-team` and the `default` profile:
+
 ```shell
-evalhub config set base_url https://evalhub.apps.my-cluster.example.com --profile prod
-evalhub config set token "$EVALHUB_TOKEN" --profile prod
-evalhub config set tenant my-team --profile prod
+evalhub config set base_url https://evalhub.apps.my-cluster.example.com
+evalhub config set token $(oc whoami -t)
+evalhub config set tenant my-team
 ```
 
 ### 2. Watch logs for a running job
@@ -21,13 +23,13 @@ Using a CLI profile:
 When you submit a job:
 
 ```shell
-uv run evalhub eval run --config eval.yaml --profile prod
+uv run evalhub eval run --config eval.yaml
 # → prints something like: Job submitted: 86c904cc-cdcf-452d-b9d8-754a7d6391ec
 ```
 
 ```shell
 cd eval-hub-sdk
-uv run python examples/watch_job_logs.py --profile prod "<job_id>"
+uv run python examples/watch_job_logs.py "<job_id>"
 ```
 
 #### Useful flags
