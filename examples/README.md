@@ -27,16 +27,38 @@ uv run evalhub eval run --config eval.yaml --profile prod
 
 ```shell
 cd eval-hub-sdk
-uv run python examples/watch_job_logs.py "<job_id>" --profile prod
+uv run python examples/watch_job_logs.py --profile prod "<job_id>"
 ```
 
 #### Useful flags
 
 ```shell
-uv run python examples/watch_job_logs.py "<job_id>" --profile prod \
-  --benchmark-index 0 \      # single benchmark only
-  --tail-lines 500 \         # lines per poll
-  --poll-interval 3 \        # seconds between polls
-  --timestamps \             # include K8s timestamps
-  --timeout 3600             # give up after 1 hour
+uv run python examples/watch_job_logs.py --help
+```
+
+```shell
+usage: watch_job_logs.py [-h] [--profile PROFILE] [--base-url BASE_URL] [--token TOKEN] [--token-file TOKEN_FILE]
+                         [--tenant TENANT] [--ca-bundle CA_BUNDLE] [--insecure] [--benchmark-index BENCHMARK_INDEX]
+                         [--tail-lines TAIL_LINES] [--poll-interval POLL_INTERVAL] [--timeout TIMEOUT] [--timestamps]
+                         job_id
+
+Stream evaluation job logs until the job completes.
+
+positional arguments:
+  job_id                            Evaluation job ID to watch
+
+options:
+  -h, --help                        show this help message and exit
+  --profile PROFILE                 EvalHub CLI profile name (reads ~/.config/evalhub/config.yaml)
+  --base-url BASE_URL               EvalHub base URL (or set EVALHUB_BASE_URL)
+  --token TOKEN                     Bearer token (or set EVALHUB_TOKEN)
+  --token-file TOKEN_FILE           Read bearer token from a file (e.g. Kubernetes service account)
+  --tenant TENANT                   X-Tenant header value (or set EVALHUB_TENANT)
+  --ca-bundle CA_BUNDLE             Path to CA bundle for TLS verification
+  --insecure                        Skip TLS certificate verification
+  --benchmark-index BENCHMARK_INDEX Watch logs for a single benchmark index only
+  --tail-lines TAIL_LINES           Max log lines per poll (default: 1000)
+  --poll-interval POLL_INTERVAL     Seconds between polls (default: 2.0)
+  --timeout TIMEOUT                 Stop watching after this many seconds
+  --timestamps                      Include Kubernetes log timestamps when supported
 ```
