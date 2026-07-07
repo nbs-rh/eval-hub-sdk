@@ -157,6 +157,42 @@ def _create_client(args: argparse.Namespace) -> SyncEvalHubClient:
     )
 
 
+def _format_http_error(exc: httpx.HTTPError) -> str:
+    """Format an HTTP error with server response details when available."""
+    if not isinstance(exc, httpx.HTTPStatusError):
+        return str(exc)
+
+    response = exc.response
+    lines = [f"HTTP {response.status_code} {response.reason_phrase} for {response.request.url}"]
+
+    body = response.text.strip()
+    if not body:
+        return "\n".join(lines)
+
+    try:
+        payload = response.json()
+    except ValueError:
+        lines.append(body)
+        return "\n".join(lines)
+
+    if isinstance(payload, dict):
+        message = payload.get("message")
+        message_code = payload.get("message_code")
+        trace = payload.get("trace")
+        if message_code:
+            lines.append(f"message_code: {message_code}")
+        if message:
+            lines.append(f"message: {message}")
+        if trace:
+            lines.append(f"trace: {trace}")
+        if not (message or message_code):
+            lines.append(body)
+    else:
+        lines.append(body)
+
+    return "\n".join(lines)
+
+
 def main() -> int:
     args = _build_parser().parse_args()
     options = JobLogOptions(tail_lines=args.tail_lines, timestamps=args.timestamps)
@@ -186,7 +222,7 @@ def main() -> int:
         except TimeoutError:
             print("\nTimed out before job reached a terminal state.", file=sys.stderr)
         except httpx.HTTPError as exc:
-            print(f"\nRequest failed: {exc}", file=sys.stderr)
+            print(f"\nRequest failed:\n{_format_http_error(exc)}", file=sys.stderr)
             return 3
         except KeyboardInterrupt:
             print("\nStopped.", file=sys.stderr)
