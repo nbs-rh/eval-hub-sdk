@@ -16,6 +16,7 @@ import click
 import yaml
 
 import evalhub
+from evalhub.client.job_logs import TERMINAL_JOB_STATES, JobLogOptions
 from evalhub.models import (
     BenchmarkConfig,
     CollectionCreateRequest,
@@ -213,7 +214,7 @@ def _build_request_from_flags(
     default=None,
     help=(
         "YAML or JSON file with the full job body. When set, all other "
-        "job-related flags on this command are ignored; use --wait, "
+        "job-related flags on this command are ignored; use --wait, --watch, "
         "--timeout, --poll-interval, and --format with --config as needed."
     ),
 )
@@ -282,14 +283,24 @@ def _build_request_from_flags(
     "--wait", "wait_for", is_flag=True, default=False, help="Block until job completes."
 )
 @click.option(
-    "--timeout", type=float, default=None, help="Timeout in seconds when using --wait."
+    "--watch",
+    "watch_for",
+    is_flag=True,
+    default=False,
+    help="Stream job logs until the job completes.",
+)
+@click.option(
+    "--timeout",
+    type=float,
+    default=None,
+    help="Timeout in seconds when using --wait or --watch.",
 )
 @click.option(
     "--poll-interval",
     type=float,
     default=5.0,
     show_default=True,
-    help="Poll interval in seconds when using --wait.",
+    help="Poll interval in seconds when using --wait or --watch.",
 )
 @format_option()
 @click.pass_context
@@ -315,6 +326,7 @@ def eval_run(
     test_data_s3_key: str | None,
     test_data_s3_secret: str | None,
     wait_for: bool,
+    watch_for: bool,
     timeout: float | None,
     poll_interval: float,
     output_format: str,
@@ -329,6 +341,7 @@ def eval_run(
     Examples:
       evalhub eval run --config eval.yaml
       evalhub eval run --config eval.yaml --wait
+      evalhub eval run --config eval.yaml --watch
       evalhub eval run --name my-eval --model-url http://vllm:8000/v1 \\
           --model-name llama3 --provider lm_evaluation_harness -b mmlu -b hellaswag
       evalhub eval run --name my-eval --model-url http://vllm:8000/v1 \\
@@ -348,6 +361,9 @@ def eval_run(
           --test-data-s3-bucket evalhub-test --test-data-s3-key dataset/ \\
           --test-data-s3-secret evalhub-s3-credentials
     """
+    if wait_for and watch_for:
+        raise click.UsageError("--wait and --watch are mutually exclusive.")
+
     client = get_client(ctx)
 
     if config_file:
@@ -430,7 +446,11 @@ def eval_run(
     structured = output_format in ("json", "yaml")
     click.echo(f"Job submitted: {job.id}", err=structured)
 
-    if wait_for:
+    if watch_for:
+        job = _watch_job_logs(
+            ctx, client, job.id, poll_interval=poll_interval, timeout=timeout
+        )
+    elif wait_for:
         click.echo(f"Waiting for job {job.id} to complete...", err=structured)
         job = client.jobs.wait_for_completion(
             job.id, timeout=timeout, poll_interval=poll_interval
@@ -442,7 +462,7 @@ def eval_run(
         if job.effective_state == JobStatus.FAILED:
             ctx.exit(1)
 
-    if structured:
+    if structured and not watch_for:
         output([job.model_dump(mode="json")], output_format=output_format)
 
 
@@ -569,6 +589,52 @@ def _parse_since(value: str) -> datetime:
     amount, unit = int(m.group(1)), m.group(2)
     delta = timedelta(hours=amount) if unit == "h" else timedelta(days=amount)
     return datetime.now(tz=UTC) - delta
+
+
+def _watch_job_logs(
+    ctx: click.Context,
+    client: Any,
+    job_id: str,
+    *,
+    poll_interval: float,
+    timeout: float | None,
+) -> Any:
+    """Stream job logs until the job reaches a terminal state."""
+    final_state: JobStatus | None = None
+    final_job = None
+    options = JobLogOptions()
+
+    click.echo(f"Watching logs for job {job_id}...", err=True)
+    try:
+        for update in client.jobs.watch_logs(
+            job_id,
+            options=options,
+            poll_interval=poll_interval,
+            timeout=timeout,
+        ):
+            if update.logs:
+                click.echo(update.logs, nl=False)
+            final_job = update.job
+            final_state = update.job.effective_state
+    except TimeoutError:
+        click.echo(
+            f"\nTimed out before job {job_id} reached a terminal state.",
+            err=True,
+        )
+        ctx.exit(2)
+
+    click.echo(err=True)
+    if final_state not in TERMINAL_JOB_STATES:
+        click.echo(
+            f"Watch ended before completion (last state: {final_state}).",
+            err=True,
+        )
+        ctx.exit(2)
+
+    click.echo(f"Job {job_id} finished with state: {final_state.value}", err=True)
+    if final_state == JobStatus.FAILED:
+        ctx.exit(1)
+    return final_job
 
 
 def _watch_job(client: Any, job_id: str, poll_interval: float) -> None:
@@ -870,14 +936,24 @@ def collections_delete(ctx: click.Context, collection_id: str) -> None:
     "--wait", "wait_for", is_flag=True, default=False, help="Block until job completes."
 )
 @click.option(
-    "--timeout", type=float, default=None, help="Timeout in seconds when using --wait."
+    "--watch",
+    "watch_for",
+    is_flag=True,
+    default=False,
+    help="Stream job logs until the job completes.",
+)
+@click.option(
+    "--timeout",
+    type=float,
+    default=None,
+    help="Timeout in seconds when using --wait or --watch.",
 )
 @click.option(
     "--poll-interval",
     type=float,
     default=5.0,
     show_default=True,
-    help="Poll interval in seconds when using --wait.",
+    help="Poll interval in seconds when using --wait or --watch.",
 )
 @format_option()
 @click.pass_context
@@ -890,6 +966,7 @@ def collections_run(
     name: str | None,
     queue: str | None,
     wait_for: bool,
+    watch_for: bool,
     timeout: float | None,
     poll_interval: float,
     output_format: str,
@@ -903,9 +980,13 @@ def collections_run(
     Examples:
       evalhub collections run rag-safety --model-url http://vllm:8000/v1 --model-name llama3
       evalhub collections run rag-safety --model-url http://vllm:8000/v1 --model-name llama3 --wait
+      evalhub collections run rag-safety --model-url http://vllm:8000/v1 --model-name llama3 --watch
       evalhub collections run rag-safety --model-url http://vllm:8000/v1 --model-name llama3 \\
           --queue my-local-queue
     """
+    if wait_for and watch_for:
+        raise click.UsageError("--wait and --watch are mutually exclusive.")
+
     client = get_client(ctx)
     collection = client.collections.get(collection_id)
 
@@ -934,7 +1015,11 @@ def collections_run(
     structured = output_format in ("json", "yaml")
     click.echo(f"Job submitted: {job.id}", err=structured)
 
-    if wait_for:
+    if watch_for:
+        job = _watch_job_logs(
+            ctx, client, job.id, poll_interval=poll_interval, timeout=timeout
+        )
+    elif wait_for:
         click.echo(f"Waiting for job {job.id} to complete...", err=structured)
         job = client.jobs.wait_for_completion(
             job.id, timeout=timeout, poll_interval=poll_interval
@@ -946,7 +1031,7 @@ def collections_run(
         if job.effective_state == JobStatus.FAILED:
             ctx.exit(1)
 
-    if structured:
+    if structured and not watch_for:
         output([job.model_dump(mode="json")], output_format=output_format)
 
 
