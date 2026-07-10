@@ -163,7 +163,9 @@ def _format_http_error(exc: httpx.HTTPError) -> str:
         return str(exc)
 
     response = exc.response
-    lines = [f"HTTP {response.status_code} {response.reason_phrase} for {response.request.url}"]
+    lines = [
+        f"HTTP {response.status_code} {response.reason_phrase} for {response.request.url}"
+    ]
 
     body = response.text.strip()
     if not body:
