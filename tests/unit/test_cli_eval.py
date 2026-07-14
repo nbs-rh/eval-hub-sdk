@@ -13,6 +13,7 @@ import pytest
 import yaml
 from click.testing import CliRunner
 from evalhub.cli.main import main
+from evalhub.client.job_logs import JobLogUpdate
 from evalhub.models.api import (
     BenchmarkConfig,
     BenchmarkResult,
@@ -328,6 +329,113 @@ class TestEvalRun:
                 ],
             )
         assert result.exit_code == 1
+
+    def test_run_with_watch(
+        self,
+        runner: CliRunner,
+        config_file: Path,
+        mock_client: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        cfg = {
+            "name": "my-eval",
+            "model": {"url": "http://vllm:8000/v1", "name": "llama3"},
+            "benchmarks": [{"id": "mmlu", "provider_id": "lm_eval"}],
+        }
+        cfg_path = tmp_path / "eval.yaml"
+        cfg_path.write_text(yaml.safe_dump(cfg))
+
+        submitted = _make_job()
+        completed = _make_job(state=JobStatus.COMPLETED)
+        mock_client.jobs.submit.return_value = submitted
+        mock_client.jobs.watch_logs.return_value = iter(
+            [
+                JobLogUpdate(logs="starting\n", job=_make_job(state=JobStatus.RUNNING)),
+                JobLogUpdate(logs="done\n", job=completed),
+            ]
+        )
+
+        with patch("evalhub.cli.main.get_client", return_value=mock_client):
+            result = runner.invoke(
+                main,
+                [
+                    "eval",
+                    "run",
+                    "--config",
+                    str(cfg_path),
+                    "--watch",
+                ],
+            )
+        assert result.exit_code == 0
+        assert "starting" in result.output
+        assert "done" in result.output
+        assert "finished with state: completed" in result.output
+        mock_client.jobs.watch_logs.assert_called_once()
+
+    def test_run_with_watch_failed(
+        self,
+        runner: CliRunner,
+        config_file: Path,
+        mock_client: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        cfg = {
+            "name": "my-eval",
+            "model": {"url": "http://vllm:8000/v1", "name": "llama3"},
+            "benchmarks": [{"id": "mmlu", "provider_id": "lm_eval"}],
+        }
+        cfg_path = tmp_path / "eval.yaml"
+        cfg_path.write_text(yaml.safe_dump(cfg))
+
+        submitted = _make_job()
+        failed = _make_job(state=JobStatus.FAILED)
+        mock_client.jobs.submit.return_value = submitted
+        mock_client.jobs.watch_logs.return_value = iter(
+            [JobLogUpdate(logs="error\n", job=failed)]
+        )
+
+        with patch("evalhub.cli.main.get_client", return_value=mock_client):
+            result = runner.invoke(
+                main,
+                [
+                    "eval",
+                    "run",
+                    "--config",
+                    str(cfg_path),
+                    "--watch",
+                ],
+            )
+        assert result.exit_code == 1
+
+    def test_run_with_wait_and_watch_mutually_exclusive(
+        self,
+        runner: CliRunner,
+        config_file: Path,
+        mock_client: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        cfg = {
+            "name": "my-eval",
+            "model": {"url": "http://vllm:8000/v1", "name": "llama3"},
+            "benchmarks": [{"id": "mmlu", "provider_id": "lm_eval"}],
+        }
+        cfg_path = tmp_path / "eval.yaml"
+        cfg_path.write_text(yaml.safe_dump(cfg))
+
+        with patch("evalhub.cli.main.get_client", return_value=mock_client):
+            result = runner.invoke(
+                main,
+                [
+                    "eval",
+                    "run",
+                    "--config",
+                    str(cfg_path),
+                    "--wait",
+                    "--watch",
+                ],
+            )
+        assert result.exit_code != 0
+        assert "mutually exclusive" in result.output.lower()
 
     def test_run_with_param_flags(
         self, runner: CliRunner, config_file: Path, mock_client: MagicMock
@@ -926,6 +1034,7 @@ class TestEvalHelp:
         assert "--config" in result.output
         assert "--model-url" in result.output
         assert "--wait" in result.output
+        assert "--watch" in result.output
 
     def test_eval_status_help(self, runner: CliRunner) -> None:
         result = runner.invoke(main, ["eval", "status", "--help"])
