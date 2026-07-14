@@ -24,6 +24,9 @@ from evalhub.adapter import (
     OCIArtifactSpec,
     SafetyEvalEntry,
 )
+from pydantic import ValidationError
+
+pytestmark = pytest.mark.unit
 
 
 @pytest.fixture
@@ -531,6 +534,21 @@ class TestJobResults:
         assert results.completed_at is not None
         assert isinstance(results.completed_at, datetime)
 
+    def test_additional_info_rejects_invalid_values_on_assignment(self) -> None:
+        """Test that assigning non-scalar values to additional_info is rejected."""
+        results = JobResults(
+            id="test-job-001",
+            benchmark_id="mmlu",
+            benchmark_index=0,
+            model_name="model",
+            results=[],
+            num_examples_evaluated=100,
+            duration_seconds=60.0,
+        )
+
+        with pytest.raises(ValidationError):
+            results.additional_info = {"nested": {"not": "allowed"}}  # type: ignore[dict-item]
+
 
 class TestJobCallbacks:
     """Tests for JobCallbacks interface."""
@@ -1013,3 +1031,50 @@ class TestJobResultsWithCards:
 
         assert results.eval_card is None
         assert results.env_card is None
+        assert results.additional_info is None
+
+    def test_additional_info_accepts_scalar_values(self) -> None:
+        info: dict[str, str | int | float | bool | None] = {
+            "dataset_sha": "sha256:abc",
+            "zero_shot": "0.85",
+            "custom_metric": 42,
+            "score": 0.95,
+            "passed": True,
+            "notes": None,
+        }
+        results = JobResults(
+            id="j",
+            benchmark_id="b",
+            benchmark_index=0,
+            model_name="m",
+            results=[],
+            num_examples_evaluated=0,
+            duration_seconds=0.0,
+            additional_info=info,
+        )
+        assert results.additional_info == info
+
+    def test_additional_info_rejects_non_scalar_values(self) -> None:
+        with pytest.raises(ValueError, match="additional_info"):
+            JobResults(
+                id="j",
+                benchmark_id="b",
+                benchmark_index=0,
+                model_name="m",
+                results=[],
+                num_examples_evaluated=0,
+                duration_seconds=0.0,
+                additional_info={"nested": {"a": 1}},  # type: ignore[dict-item]
+            )
+
+        with pytest.raises(ValueError, match="additional_info"):
+            JobResults(
+                id="j",
+                benchmark_id="b",
+                benchmark_index=0,
+                model_name="m",
+                results=[],
+                num_examples_evaluated=0,
+                duration_seconds=0.0,
+                additional_info={"tags": ["a", "b"]},  # type: ignore[dict-item]
+            )

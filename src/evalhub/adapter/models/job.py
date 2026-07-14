@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ...models.api import (
     EvaluationResult,
@@ -264,6 +264,8 @@ class JobResults(BaseModel):
     This is returned synchronously when the job completes.
     """
 
+    model_config = ConfigDict(validate_assignment=True)
+
     # Core results
     id: str = Field(..., description="Job identifier")
     benchmark_id: str = Field(..., description="Benchmark that was evaluated")
@@ -308,6 +310,14 @@ class JobResults(BaseModel):
     env_card: EnvironmentCardMetadata | None = Field(
         default=None,
         description="Environment Card metadata. Serialized into artifacts['evalhub.env_card'].",
+    )
+
+    additional_info: dict[str, str | int | float | bool | None] | None = Field(
+        default=None,
+        description="Supplementary scalar key-value pairs for evaluation "
+        "information beyond metrics (e.g. prompting strategy, dataset SHA). "
+        "Serialized into status_event['additional_info'] and available to "
+        "downstream consumers such as EvalCard generation.",
     )
 
 
