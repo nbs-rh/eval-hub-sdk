@@ -182,6 +182,35 @@ class TestEvalRun:
         assert req.experiment.name == "test_exp"
         assert req.experiment.tags == []
 
+    def test_run_with_model_auth_secret(
+        self, runner: CliRunner, config_file: Path, mock_client: MagicMock
+    ) -> None:
+        mock_client.jobs.submit.return_value = _make_job()
+        with patch("evalhub.cli.main.get_client", return_value=mock_client):
+            result = runner.invoke(
+                main,
+                [
+                    "eval",
+                    "run",
+                    "--name",
+                    "inline-eval",
+                    "--model-url",
+                    "http://vllm:8000/v1",
+                    "--model-name",
+                    "llama3",
+                    "--model-auth-secret",
+                    "my-model-credentials",
+                    "--provider",
+                    "lm_eval",
+                    "-b",
+                    "mmlu",
+                ],
+            )
+        assert result.exit_code == 0
+        req = mock_client.jobs.submit.call_args[0][0]
+        assert req.model.auth is not None
+        assert req.model.auth.secret_ref == "my-model-credentials"
+
     def test_run_with_inline_oci(
         self, runner: CliRunner, config_file: Path, mock_client: MagicMock
     ) -> None:
@@ -737,6 +766,139 @@ class TestEvalRun:
         assert req.queue is not None
         assert req.queue.name == "user-queue"
 
+    def test_run_with_pvc_claim_name(
+        self, runner: CliRunner, config_file: Path, mock_client: MagicMock
+    ) -> None:
+        mock_client.jobs.submit.return_value = _make_job()
+        with patch("evalhub.cli.main.get_client", return_value=mock_client):
+            result = runner.invoke(
+                main,
+                [
+                    "eval",
+                    "run",
+                    "--name",
+                    "pvc-eval",
+                    "--model-url",
+                    "http://vllm:8000/v1",
+                    "--model-name",
+                    "llama3",
+                    "--provider",
+                    "lm_eval",
+                    "-b",
+                    "mmlu",
+                    "--test-data-pvc-claim-name",
+                    "my-datasets-pvc",
+                ],
+            )
+        assert result.exit_code == 0
+        req = mock_client.jobs.submit.call_args[0][0]
+        assert req.benchmarks[0].test_data_ref is not None
+        assert req.benchmarks[0].test_data_ref.pvc is not None
+        assert req.benchmarks[0].test_data_ref.pvc.claim_name == "my-datasets-pvc"
+        assert req.benchmarks[0].test_data_ref.pvc.sub_path is None
+        assert req.benchmarks[0].test_data_ref.s3 is None
+
+    def test_run_with_pvc_claim_name_and_sub_path(
+        self, runner: CliRunner, config_file: Path, mock_client: MagicMock
+    ) -> None:
+        mock_client.jobs.submit.return_value = _make_job()
+        with patch("evalhub.cli.main.get_client", return_value=mock_client):
+            result = runner.invoke(
+                main,
+                [
+                    "eval",
+                    "run",
+                    "--name",
+                    "pvc-eval",
+                    "--model-url",
+                    "http://vllm:8000/v1",
+                    "--model-name",
+                    "llama3",
+                    "--provider",
+                    "lm_eval",
+                    "-b",
+                    "mmlu",
+                    "--test-data-pvc-claim-name",
+                    "my-datasets-pvc",
+                    "--test-data-pvc-sub-path",
+                    "staging",
+                ],
+            )
+        assert result.exit_code == 0
+        req = mock_client.jobs.submit.call_args[0][0]
+        pvc = req.benchmarks[0].test_data_ref.pvc
+        assert pvc.claim_name == "my-datasets-pvc"
+        assert pvc.sub_path == "staging"
+
+    def test_run_pvc_and_s3_mutually_exclusive(
+        self, runner: CliRunner, config_file: Path, mock_client: MagicMock
+    ) -> None:
+        mock_client.jobs.submit.return_value = _make_job()
+        with patch("evalhub.cli.main.get_client", return_value=mock_client):
+            result = runner.invoke(
+                main,
+                [
+                    "eval",
+                    "run",
+                    "--name",
+                    "pvc-eval",
+                    "--model-url",
+                    "http://vllm:8000/v1",
+                    "--model-name",
+                    "llama3",
+                    "--provider",
+                    "lm_eval",
+                    "-b",
+                    "mmlu",
+                    "--test-data-pvc-claim-name",
+                    "my-datasets-pvc",
+                    "--test-data-s3-bucket",
+                    "my-bucket",
+                    "--test-data-s3-key",
+                    "data/",
+                    "--test-data-s3-secret",
+                    "my-secret",
+                ],
+            )
+        assert result.exit_code != 0
+        assert "Cannot specify both S3 and PVC" in result.output
+
+    def test_run_pvc_sub_path_requires_claim_name(
+        self, runner: CliRunner, config_file: Path, mock_client: MagicMock
+    ) -> None:
+        with patch("evalhub.cli.main.get_client", return_value=mock_client):
+            result = runner.invoke(
+                main,
+                [
+                    "eval",
+                    "run",
+                    "--name",
+                    "pvc-eval",
+                    "--model-url",
+                    "http://vllm:8000/v1",
+                    "--model-name",
+                    "llama3",
+                    "--provider",
+                    "lm_eval",
+                    "-b",
+                    "mmlu",
+                    "--test-data-pvc-sub-path",
+                    "staging",
+                ],
+            )
+        assert result.exit_code != 0
+        assert (
+            "--test-data-pvc-sub-path requires --test-data-pvc-claim-name"
+            in result.output
+        )
+        mock_client.jobs.submit.assert_not_called()
+
+    def test_eval_run_help_pvc_flags(self, runner: CliRunner) -> None:
+        result = runner.invoke(main, ["eval", "run", "--help"])
+        assert result.exit_code == 0
+        assert "--test-data-pvc-claim-name" in result.output
+        assert "--test-data-pvc-sub-path" in result.output
+
 
 # --- eval status ---
 
@@ -1033,6 +1195,7 @@ class TestEvalHelp:
         assert result.exit_code == 0
         assert "--config" in result.output
         assert "--model-url" in result.output
+        assert "--model-auth-secret" in result.output
         assert "--wait" in result.output
         assert "--watch" in result.output
 

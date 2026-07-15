@@ -25,10 +25,12 @@ from evalhub.models import (
     ExperimentConfig,
     JobStatus,
     JobSubmissionRequest,
+    ModelAuth,
     ModelConfig,
     OCIConnectionConfig,
     OCICoordinates,
     ProviderCreateRequest,
+    PVCTestDataRef,
     QueueConfig,
     S3TestDataRef,
     TestDataRef,
@@ -163,6 +165,16 @@ def _load_config_file(path: str) -> dict[str, Any]:
     return data
 
 
+def _build_model_config(
+    model_url: str,
+    model_name: str,
+    model_auth_secret: str | None = None,
+) -> ModelConfig:
+    """Build ModelConfig from CLI flags."""
+    auth = ModelAuth(secret_ref=model_auth_secret) if model_auth_secret else None
+    return ModelConfig(url=model_url, name=model_name, auth=auth)
+
+
 def _build_request_from_flags(
     name: str,
     model_url: str,
@@ -177,6 +189,7 @@ def _build_request_from_flags(
     extra_params: dict[str, Any] | None = None,
     queue: QueueConfig | None = None,
     test_data_ref: TestDataRef | None = None,
+    model_auth_secret: str | None = None,
 ) -> JobSubmissionRequest:
     """Build a JobSubmissionRequest from CLI flags."""
     parameters: dict[str, Any] = {}
@@ -198,7 +211,7 @@ def _build_request_from_flags(
     return JobSubmissionRequest(
         name=name,
         description=description,
-        model=ModelConfig(url=model_url, name=model_name),
+        model=_build_model_config(model_url, model_name, model_auth_secret),
         benchmarks=benchmarks,
         experiment=experiment,
         exports=exports,
@@ -221,6 +234,14 @@ def _build_request_from_flags(
 @click.option("--name", default=None, help="Job name (required if not using --config).")
 @click.option("--model-url", default=None, help="Model endpoint URL.")
 @click.option("--model-name", default=None, help="Model name or identifier.")
+@click.option(
+    "--model-auth-secret",
+    default=None,
+    help=(
+        "Kubernetes Secret name containing model endpoint credentials "
+        "(inline flags only)."
+    ),
+)
 @click.option("--provider", default=None, help="Evaluation provider ID.")
 @click.option("--benchmark", "-b", multiple=True, help="Benchmark ID (repeatable).")
 @click.option(
@@ -280,6 +301,16 @@ def _build_request_from_flags(
     help="Kubernetes Secret name with S3 credentials for custom test data (inline flags only).",
 )
 @click.option(
+    "--test-data-pvc-claim-name",
+    default=None,
+    help="PVC claim name for custom test data (inline flags only).",
+)
+@click.option(
+    "--test-data-pvc-sub-path",
+    default=None,
+    help="Sub-path within the PVC to mount at /test_data (inline flags only).",
+)
+@click.option(
     "--wait", "wait_for", is_flag=True, default=False, help="Block until job completes."
 )
 @click.option(
@@ -311,6 +342,7 @@ def eval_run(
     name: str | None,
     model_url: str | None,
     model_name: str | None,
+    model_auth_secret: str | None,
     provider: str | None,
     benchmark: tuple[str, ...],
     metrics: tuple[str, ...],
@@ -325,6 +357,8 @@ def eval_run(
     test_data_s3_bucket: str | None,
     test_data_s3_key: str | None,
     test_data_s3_secret: str | None,
+    test_data_pvc_claim_name: str | None,
+    test_data_pvc_sub_path: str | None,
     wait_for: bool,
     watch_for: bool,
     timeout: float | None,
@@ -345,6 +379,9 @@ def eval_run(
       evalhub eval run --name my-eval --model-url http://vllm:8000/v1 \\
           --model-name llama3 --provider lm_evaluation_harness -b mmlu -b hellaswag
       evalhub eval run --name my-eval --model-url http://vllm:8000/v1 \\
+          --model-name llama3 --model-auth-secret my-model-credentials -b mmlu \\
+          --provider lm_evaluation_harness
+      evalhub eval run --name my-eval --model-url http://vllm:8000/v1 \\
           --model-name llama3 --provider lm_evaluation_harness -b mmlu \\
           --experiment my-experiment
       evalhub eval run --name my-eval --model-url http://vllm:8000/v1 \\
@@ -360,6 +397,9 @@ def eval_run(
           --model-name llama3 --provider lm_evaluation_harness -b your_benchmark_id \\
           --test-data-s3-bucket evalhub-test --test-data-s3-key dataset/ \\
           --test-data-s3-secret evalhub-s3-credentials
+      evalhub eval run --name my-eval --model-url http://vllm:8000/v1 \\
+          --model-name llama3 --provider lm_evaluation_harness -b your_benchmark_id \\
+          --test-data-pvc-claim-name my-datasets-pvc --test-data-pvc-sub-path staging
     """
     if wait_for and watch_for:
         raise click.UsageError("--wait and --watch are mutually exclusive.")
@@ -417,6 +457,14 @@ def eval_run(
                 "S3 test data requires --test-data-s3-bucket, --test-data-s3-key, "
                 "and --test-data-s3-secret to all be specified."
             )
+        if test_data_pvc_sub_path and not test_data_pvc_claim_name:
+            raise click.ClickException(
+                "--test-data-pvc-sub-path requires --test-data-pvc-claim-name."
+            )
+        if any(s3_flags) and test_data_pvc_claim_name:
+            raise click.ClickException(
+                "Cannot specify both S3 and PVC test data sources. Use one or the other."
+            )
         test_data_ref: TestDataRef | None = None
         if all(s3_flags):
             test_data_ref = TestDataRef(
@@ -424,6 +472,13 @@ def eval_run(
                     bucket=cast(str, test_data_s3_bucket),
                     key=cast(str, test_data_s3_key),
                     secret_ref=cast(str, test_data_s3_secret),
+                )
+            )
+        elif test_data_pvc_claim_name:
+            test_data_ref = TestDataRef(
+                pvc=PVCTestDataRef(
+                    claim_name=test_data_pvc_claim_name,
+                    sub_path=test_data_pvc_sub_path,
                 )
             )
         request = _build_request_from_flags(
@@ -440,6 +495,7 @@ def eval_run(
             extra_params=extra_params,
             queue=queue_config,
             test_data_ref=test_data_ref,
+            model_auth_secret=model_auth_secret,
         )
 
     job = client.jobs.submit(request)
@@ -926,6 +982,11 @@ def collections_delete(ctx: click.Context, collection_id: str) -> None:
 @click.argument("collection_id")
 @click.option("--model-url", required=True, help="Model endpoint URL.")
 @click.option("--model-name", required=True, help="Model name or identifier.")
+@click.option(
+    "--model-auth-secret",
+    default=None,
+    help="Kubernetes Secret name containing model endpoint credentials.",
+)
 @click.option("--name", default=None, help="Job name (defaults to collection name).")
 @click.option(
     "--queue",
@@ -963,6 +1024,7 @@ def collections_run(
     collection_id: str,
     model_url: str,
     model_name: str,
+    model_auth_secret: str | None,
     name: str | None,
     queue: str | None,
     wait_for: bool,
@@ -979,6 +1041,8 @@ def collections_run(
     \b
     Examples:
       evalhub collections run rag-safety --model-url http://vllm:8000/v1 --model-name llama3
+      evalhub collections run rag-safety --model-url http://vllm:8000/v1 --model-name llama3 \\
+          --model-auth-secret my-model-credentials
       evalhub collections run rag-safety --model-url http://vllm:8000/v1 --model-name llama3 --wait
       evalhub collections run rag-safety --model-url http://vllm:8000/v1 --model-name llama3 --watch
       evalhub collections run rag-safety --model-url http://vllm:8000/v1 --model-name llama3 \\
@@ -1007,7 +1071,7 @@ def collections_run(
     queue_config: QueueConfig | None = QueueConfig(name=queue) if queue else None
     request = JobSubmissionRequest(
         name=job_name,
-        model=ModelConfig(url=model_url, name=model_name),
+        model=_build_model_config(model_url, model_name, model_auth_secret),
         benchmarks=benchmarks,
         queue=queue_config,
     )

@@ -262,10 +262,39 @@ class S3TestDataRef(BaseModel):
     )
 
 
+class PVCTestDataRef(BaseModel):
+    """PersistentVolumeClaim source for custom test data.
+
+    The PVC must already exist in the same namespace as the evaluation job.
+    It is mounted read-only at /test_data in the adapter container with no
+    init container — data must reside on the PVC before job submission.
+    """
+
+    claim_name: str = Field(
+        ...,
+        description="Name of the PersistentVolumeClaim in the evaluation job namespace",
+    )
+    sub_path: str | None = Field(
+        default=None,
+        description="Optional path within the PVC to mount at /test_data instead of the PVC root",
+    )
+
+
 class TestDataRef(BaseModel):
-    """Reference to an external test data source."""
+    """Reference to an external test data source. Exactly one of s3 or pvc must be set."""
 
     s3: S3TestDataRef | None = Field(default=None, description="S3 data source")
+    pvc: PVCTestDataRef | None = Field(
+        default=None, description="PersistentVolumeClaim data source"
+    )
+
+    @model_validator(mode="after")
+    def check_exactly_one_source(self) -> "TestDataRef":
+        if self.s3 and self.pvc:
+            raise ValueError("Cannot specify both 's3' and 'pvc' test data sources")
+        if not self.s3 and not self.pvc:
+            raise ValueError("Must specify either 's3' or 'pvc' test data source")
+        return self
 
 
 class BenchmarkConfig(BaseModel):
