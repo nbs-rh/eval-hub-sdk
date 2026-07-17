@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 
 import pytest
-
 from evalhub.adapter.models.job import JobStatusUpdate, MessageInfo
 from evalhub.adapter.status_messages import (
     sanitize_consumer_message,
