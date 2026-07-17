@@ -23,6 +23,7 @@ from .models import (
 )
 from .oci import DEFAULT_OCI_PROXY_HOST, OCIArtifactPersister
 from .oci.persister import OCIArtifactContext
+from .status_messages import sanitize_status_update
 
 _MLFLOW_SAVE_FAILED = MessageInfo(
     message="Failed to save evaluation results to MLflow.",
@@ -575,9 +576,15 @@ class DefaultCallbacks(JobCallbacks):
     def report_status(self, update: JobStatusUpdate) -> None:
         """Report status update to evalhub or log it.
 
+        Error and warning messages are sanitized before they are sent to the
+        sidecar so consumer-facing payloads do not include URLs or hostnames.
+        The full original message is logged before any shortening.
+
         Args:
             update: Status update to report
         """
+        update = sanitize_status_update(update)
+
         # If evalhub available, send status update
         if self.sidecar_url and self._httpx_available and self._http_client:
             try:

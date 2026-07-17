@@ -94,6 +94,7 @@ from .models import (
 )
 from .oci import OCIArtifactPersister
 from .settings import AdapterSettings
+from .status_messages import sanitize_consumer_message, sanitize_status_update
 
 # Legacy API is available but deprecated
 # from evalhub.adapter.legacy import ...
@@ -120,6 +121,9 @@ __all__ = [
     "OCIArtifactPersister",
     # Callback implementation
     "DefaultCallbacks",
+    # Status message sanitization
+    "sanitize_consumer_message",
+    "sanitize_status_update",
     # Configuration utilities
     "get_job_spec_path",
     "AdapterSettings",

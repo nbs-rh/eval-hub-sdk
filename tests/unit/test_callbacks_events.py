@@ -266,6 +266,52 @@ def test_report_status_sends_error_message() -> None:
     assert event["error_message"] == {"message": "boom", "message_code": "kaboom"}
 
 
+def test_report_status_sanitizes_error_message_urls() -> None:
+    from evalhub.adapter.models.job import JobStatusUpdate, MessageInfo
+    from evalhub.models.api import JobStatus
+
+    callbacks, mock_http = _make_callbacks()
+    full = (
+        "Model endpoint returned HTTP 404: 404 Client Error: Not Found for url: "
+        "http://localhost:8080/v1/completions"
+    )
+    callbacks.report_status(
+        JobStatusUpdate(
+            status=JobStatus.FAILED,
+            error_message=MessageInfo(
+                message=full,
+                message_code="evaluation_error",
+            ),
+        )
+    )
+
+    body = mock_http.post.call_args.kwargs["json"]
+    event = body["benchmark_status_event"]
+    assert event["error_message"]["message"] == "Model endpoint returned HTTP 404"
+    assert "localhost" not in event["error_message"]["message"]
+
+
+def test_report_status_sanitizes_warning_message_urls() -> None:
+    from evalhub.adapter.models.job import JobStatusUpdate, MessageInfo
+    from evalhub.models.api import JobStatus
+
+    callbacks, mock_http = _make_callbacks()
+    callbacks.report_status(
+        JobStatusUpdate(
+            status=JobStatus.RUNNING,
+            warning_message=MessageInfo(
+                message="Artifact upload warning for url: https://quay.io/v2/",
+                message_code="oci_warning",
+            ),
+        )
+    )
+
+    body = mock_http.post.call_args.kwargs["json"]
+    event = body["benchmark_status_event"]
+    assert event["warning_message"]["message"] == "Artifact upload warning for url: /v2/"
+    assert "quay.io" not in event["warning_message"]["message"]
+
+
 def test_report_status_sends_warning_message() -> None:
     from evalhub.adapter.models.job import JobStatusUpdate, MessageInfo
     from evalhub.models.api import JobStatus
