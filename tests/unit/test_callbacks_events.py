@@ -308,7 +308,9 @@ def test_report_status_sanitizes_warning_message_urls() -> None:
 
     body = mock_http.post.call_args.kwargs["json"]
     event = body["benchmark_status_event"]
-    assert event["warning_message"]["message"] == "Artifact upload warning for url: /v2/"
+    assert (
+        event["warning_message"]["message"] == "Artifact upload warning for url: /v2/"
+    )
     assert "quay.io" not in event["warning_message"]["message"]
 
 

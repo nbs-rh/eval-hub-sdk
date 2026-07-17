@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 import pytest
-from evalhub.adapter.models.job import JobStatusUpdate, MessageInfo
+from evalhub.adapter.models.job import ErrorInfo, JobStatusUpdate, MessageInfo
 from evalhub.adapter.status_messages import (
     sanitize_consumer_message,
     sanitize_status_update,
@@ -68,6 +68,9 @@ from evalhub.models.api import JobStatus
             "Failed writing report.json to results dir",
             "Failed writing report.json to results dir",
         ),
+        ("http://localhost:8080", "An error occurred"),
+        ("localhost:8080", "An error occurred"),
+        ("https://example.com/", "An error occurred"),
     ],
 )
 def test_sanitize_consumer_message(message: str, want: str) -> None:
@@ -95,6 +98,17 @@ def test_sanitize_consumer_message_does_not_log_when_unchanged(
         assert sanitize_consumer_message(message) == message
 
     assert "Sanitized status message" not in caplog.text
+
+
+def test_sanitize_consumer_message_logs_when_fallback_used(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    full = "http://localhost:8080"
+    with caplog.at_level(logging.INFO, logger="evalhub.adapter.status_messages"):
+        assert sanitize_consumer_message(full) == "An error occurred"
+
+    assert full in caplog.text
+    assert "Sanitized status message" in caplog.text
 
 
 def test_sanitize_status_update_sanitizes_error_and_warning() -> None:
@@ -135,3 +149,39 @@ def test_sanitize_status_update_noop_when_clean() -> None:
     )
 
     assert sanitize_status_update(update) is update
+
+
+def test_sanitize_status_update_sanitizes_deprecated_error() -> None:
+    with pytest.warns(DeprecationWarning):
+        update = JobStatusUpdate(
+            status=JobStatus.FAILED,
+            error=ErrorInfo(
+                message=(
+                    "Model endpoint returned HTTP 404: 404 Client Error: Not Found "
+                    "for url: http://localhost:8080/v1/completions"
+                ),
+                message_code="evaluation_error",
+            ),
+        )
+        sanitized = sanitize_status_update(update)
+
+    assert sanitized is not update
+    assert sanitized.error is not None
+    assert sanitized.error.message == "Model endpoint returned HTTP 404"
+    assert sanitized.error.message_code == "evaluation_error"
+    assert sanitized.resolved_error is sanitized.error
+    assert update.error is not None
+    assert "localhost:8080" in update.error.message
+
+
+def test_sanitize_status_update_preserves_clean_deprecated_error() -> None:
+    with pytest.warns(DeprecationWarning):
+        update = JobStatusUpdate(
+            status=JobStatus.FAILED,
+            error=ErrorInfo(
+                message="evaluation failed",
+                message_code="evaluation_error",
+            ),
+        )
+        assert sanitize_status_update(update) is update
+        assert update.resolved_error is update.error

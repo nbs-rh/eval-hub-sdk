@@ -10,24 +10,24 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import TypeVar
 from urllib.parse import urlparse
 
-from .models.job import JobStatusUpdate, MessageInfo
+from .models.job import ErrorInfo, JobStatusUpdate, MessageInfo
+
+_TMessage = TypeVar("_TMessage", MessageInfo, ErrorInfo)
 
 logger = logging.getLogger(__name__)
 
 # Matches adapter errors like:
 # "Model endpoint returned HTTP 404: 404 Client Error: Not Found for url: http://..."
 # Capture group 1 is the consumer-safe prefix (through the HTTP status code).
-_ENDPOINT_HTTP_DETAIL = re.compile(
-    r"(?i)^(.+\bendpoint returned HTTP \d+)\s*:\s*\S"
-)
+_ENDPOINT_HTTP_DETAIL = re.compile(r"(?i)^(.+\bendpoint returned HTTP \d+)\s*:\s*\S")
 
 # Absolute URLs — replaced with path (+ query/fragment) so the message stays useful.
 # Optional leading preposition is dropped when the URL has no useful path.
 _PREP_URL = re.compile(
-    r"(?i)(?:(?P<prep>\s+(?:at|from|to|on|via))\s+)?"
-    r"(?P<url>https?://[^\s\"'<>]+)"
+    r"(?i)(?:(?P<prep>\s+(?:at|from|to|on|via))\s+)?" r"(?P<url>https?://[^\s\"'<>]+)"
 )
 
 # Bare hostnames that commonly leak from sidecar / in-cluster errors (no scheme).
@@ -47,6 +47,10 @@ _TRAILING_PREP = re.compile(r"(?i)\s+\b(?:at|from|to|on|via)\b\s*$")
 
 _MULTI_SPACE = re.compile(r"[ \t]{2,}")
 _SPACE_BEFORE_PUNCT = re.compile(r"\s+([,.;:])")
+
+# When URL/hostname stripping leaves nothing useful, return this instead of
+# the original message (which would re-leak the sensitive detail).
+_EMPTY_SANITIZED_FALLBACK = "An error occurred"
 
 
 def _url_path(url: str) -> str:
@@ -94,7 +98,8 @@ def sanitize_consumer_message(message: str) -> str:
 
     The full original message is logged at INFO before any shortening.
     Messages that do not contain URL/hostname detail are returned unchanged
-    (and are not logged by this helper).
+    (and are not logged by this helper). When stripping removes the entire
+    message, a safe non-empty fallback is returned instead of the original.
     """
     if not message:
         return message
@@ -117,18 +122,18 @@ def sanitize_consumer_message(message: str) -> str:
     cleaned = _SPACE_BEFORE_PUNCT.sub(r"\1", cleaned)
     cleaned = cleaned.strip(" \t,;:")
 
-    if cleaned and cleaned != message:
+    if cleaned != message:
         logger.info(
             "Sanitized status message for consumer "
             "(full message logged before shortening): %s",
             message,
         )
-        return cleaned
+        return cleaned or _EMPTY_SANITIZED_FALLBACK
 
     return message
 
 
-def _sanitize_message_info(info: MessageInfo | None) -> MessageInfo | None:
+def _sanitize_message_info(info: _TMessage | None) -> _TMessage | None:
     if info is None:
         return None
     sanitized = sanitize_consumer_message(info.message)
@@ -139,17 +144,20 @@ def _sanitize_message_info(info: MessageInfo | None) -> MessageInfo | None:
 
 def sanitize_status_update(update: JobStatusUpdate) -> JobStatusUpdate:
     """Return a copy of ``update`` with consumer-safe error/warning messages."""
+    error = _sanitize_message_info(update.error)
     error_message = _sanitize_message_info(update.error_message)
     warning_message = _sanitize_message_info(update.warning_message)
 
     if (
-        error_message is update.error_message
+        error is update.error
+        and error_message is update.error_message
         and warning_message is update.warning_message
     ):
         return update
 
     return update.model_copy(
         update={
+            "error": error,
             "error_message": error_message,
             "warning_message": warning_message,
         }
