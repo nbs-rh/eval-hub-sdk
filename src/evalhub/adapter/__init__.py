@@ -88,6 +88,7 @@ from .models import (
     JobSpec,
     JobStatusUpdate,
     MessageInfo,
+    MessageOrigin,
     OCIArtifactResult,
     OCIArtifactSpec,
     SafetyEvalEntry,
@@ -114,6 +115,7 @@ __all__ = [
     "JobPhase",
     "ErrorInfo",
     "MessageInfo",
+    "MessageOrigin",
     # OCI models
     "OCIArtifactSpec",
     "OCIArtifactResult",

@@ -174,6 +174,7 @@ def test_mlflow_save_posts_failed_event_on_mlflow_error() -> None:
         == "Failed to save evaluation results to MLflow."
     )
     assert body["error_message"]["message_code"] == "mlflow_save_failed"
+    assert body["error_message"]["message_origin"] == "sdk"
     assert "mlflow offline" not in body["error_message"]["message"]
     assert "warning_message" not in body
 
@@ -264,7 +265,11 @@ def test_report_status_sends_error_message() -> None:
 
     body = mock_http.post.call_args.kwargs["json"]
     event = body["benchmark_status_event"]
-    assert event["error_message"] == {"message": "boom", "message_code": "kaboom"}
+    assert event["error_message"] == {
+        "message": "boom",
+        "message_code": "kaboom",
+        "message_origin": "adapter",
+    }
 
 
 def test_report_status_sends_warning_message() -> None:
@@ -287,7 +292,30 @@ def test_report_status_sends_warning_message() -> None:
     assert event["warning_message"] == {
         "message": "slow",
         "message_code": "slow_response",
+        "message_origin": "adapter",
     }
+
+
+def test_report_status_preserves_explicit_message_origin() -> None:
+    from evalhub.adapter.models.job import JobStatusUpdate, MessageInfo
+    from evalhub.models.api import JobStatus, MessageOrigin
+
+    callbacks, mock_http = _make_callbacks()
+    callbacks.report_status(
+        JobStatusUpdate(
+            status=JobStatus.FAILED,
+            error_message=MessageInfo(
+                message="sdk boom",
+                message_code="sdk_err",
+                message_origin=MessageOrigin.SDK,
+            ),
+        )
+    )
+
+    body = mock_http.post.call_args.kwargs["json"]
+    event = body["benchmark_status_event"]
+    assert event["error_message"]["message_origin"] == "sdk"
+
 
 
 def test_report_status_always_includes_provider_id() -> None:

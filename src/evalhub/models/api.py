@@ -159,11 +159,30 @@ class EvaluationResult(BaseModel):
     )
 
 
+class MessageOrigin(str, Enum):
+    """Origin of a status, warning, or error message.
+
+    - ``adapter``: produced by adapter code via ``report_status`` /
+      ``report_results``.
+    - ``sdk``: produced by the EvalHub SDK itself (e.g. MLflow save failure).
+    - ``server`` / ``runtime``: used by the EvalHub service / job runtime.
+    """
+
+    ADAPTER = "adapter"
+    SDK = "sdk"
+    SERVER = "server"
+    RUNTIME = "runtime"
+
+
 class MessageInfo(BaseModel):
     """Message information with code."""
 
     message: str = Field(..., description="Message text")
     message_code: str = Field(..., description="Message code")
+    message_origin: MessageOrigin | None = Field(
+        default=None,
+        description="Origin of the message (adapter, sdk, server, or runtime)",
+    )
 
 
 class EvaluationJobResource(BaseModel):
