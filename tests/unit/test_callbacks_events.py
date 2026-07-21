@@ -317,7 +317,6 @@ def test_report_status_preserves_explicit_message_origin() -> None:
     assert event["error_message"]["message_origin"] == "sdk"
 
 
-
 def test_report_status_always_includes_provider_id() -> None:
     from evalhub.adapter.models.job import JobStatusUpdate
     from evalhub.models.api import JobStatus
