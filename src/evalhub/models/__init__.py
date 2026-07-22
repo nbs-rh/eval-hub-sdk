@@ -35,6 +35,8 @@ from .api import (
     JobsList,
     JobStatus,
     JobSubmissionRequest,
+    MessageInfo,
+    MessageOrigin,
     ModelAuth,
     ModelConfig,
     OCIConnectionConfig,
@@ -56,6 +58,8 @@ __all__ = [
     # Job & Evaluation models
     "JobPhase",
     "JobStatus",
+    "MessageInfo",
+    "MessageOrigin",
     "EvaluationExports",
     "EvaluationExportsOCI",
     "EvaluationStatus",

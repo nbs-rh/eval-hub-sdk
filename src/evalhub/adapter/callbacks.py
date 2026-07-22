@@ -9,11 +9,12 @@ from typing import Any
 
 from evalhub.adapter.models.adapter import FrameworkAdapter
 
-from ..models.api import JobStatus
+from ..models.api import JobStatus, MessageOrigin
 from .config import EvalHubMode, MlflowBackend
 from .mlflow import MlflowArtifact
 from .models import (
     EnvironmentCardMetadata,
+    ErrorInfo,
     JobCallbacks,
     JobResults,
     JobSpec,
@@ -28,6 +29,7 @@ from .oci.persister import OCIArtifactContext
 _MLFLOW_SAVE_FAILED = MessageInfo(
     message="Failed to save evaluation results to MLflow.",
     message_code="mlflow_save_failed",
+    message_origin=MessageOrigin.SDK,
 )
 
 logger = logging.getLogger(__name__)
@@ -582,8 +584,29 @@ class DefaultCallbacks(JobCallbacks):
             "status": status,
         }
 
+    @staticmethod
+    def _message_payload(
+        msg: MessageInfo | ErrorInfo,
+        *,
+        default_origin: MessageOrigin = MessageOrigin.ADAPTER,
+    ) -> dict[str, Any]:
+        """Serialize a message for /events, stamping message_origin when unset.
+
+        Adapter-driven ``report_status`` / ``report_results`` calls default to
+        ``adapter``. SDK-generated errors (e.g. MLflow save failure) should set
+        ``message_origin=sdk`` on the MessageInfo before calling report_status.
+        """
+        data = msg.model_dump(mode="json")
+        if not data.get("message_origin"):
+            data["message_origin"] = default_origin.value
+        return data
+
     def report_status(self, update: JobStatusUpdate) -> None:
         """Report status update to evalhub or log it.
+
+        Message fields (``error_message``, ``warning_message``) are stamped with
+        ``message_origin=adapter`` when unset. SDK-generated errors should set
+        ``message_origin=sdk`` explicitly before calling this method.
 
         Args:
             update: Status update to report
@@ -599,13 +622,13 @@ class DefaultCallbacks(JobCallbacks):
                     status_event["phase"] = update.phase.value
 
                 if update.resolved_error:
-                    status_event["error_message"] = update.resolved_error.model_dump(
-                        mode="json"
+                    status_event["error_message"] = self._message_payload(
+                        update.resolved_error
                     )
 
                 if update.warning_message:
-                    status_event["warning_message"] = update.warning_message.model_dump(
-                        mode="json"
+                    status_event["warning_message"] = self._message_payload(
+                        update.warning_message
                     )
 
                 data = {"benchmark_status_event": status_event}
@@ -671,6 +694,9 @@ class DefaultCallbacks(JobCallbacks):
         This sends the complete results including metrics to the evalhub service.
         If the provider did not supply an Environment Card, a best-effort card
         is auto-captured from the current runtime.
+
+        When message fields are present on the event payload they are stamped
+        with ``message_origin=adapter`` (same as ``report_status``).
 
         Args:
             results: Final job results to report

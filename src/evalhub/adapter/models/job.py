@@ -15,6 +15,7 @@ from ...models.api import (
     EvaluationResult,
     JobPhase,
     JobStatus,
+    MessageOrigin,
     ModelConfig,
     OCICoordinates,
 )
@@ -29,6 +30,13 @@ class MessageInfo(BaseModel):
 
     message: str = Field(..., description="Message text")
     message_code: str = Field(..., description="Message code identifier")
+    message_origin: MessageOrigin | None = Field(
+        default=None,
+        description=(
+            "Origin of the message. Set by the SDK when posting /events: "
+            "'adapter' for adapter-driven updates, 'sdk' for SDK-generated errors."
+        ),
+    )
 
 
 class ErrorInfo(BaseModel):
@@ -39,6 +47,13 @@ class ErrorInfo(BaseModel):
 
     message: str = Field(..., description="Error message")
     message_code: str = Field(..., description="Error code identifier")
+    message_origin: MessageOrigin | None = Field(
+        default=None,
+        description=(
+            "Origin of the error. Set by the SDK when posting /events: "
+            "'adapter' for adapter-driven updates, 'sdk' for SDK-generated errors."
+        ),
+    )
 
 
 class JobSpec(BaseModel):
