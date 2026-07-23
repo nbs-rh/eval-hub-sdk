@@ -593,8 +593,9 @@ class DefaultCallbacks(JobCallbacks):
         """Serialize a message for /events, stamping message_origin when unset.
 
         Adapter-driven ``report_status`` / ``report_results`` calls default to
-        ``adapter``. SDK-generated errors (e.g. MLflow save failure) should set
-        ``message_origin=sdk`` on the MessageInfo before calling report_status.
+        ``adapter``. Errors from the SDK itself (e.g. MLflow save failure)
+        should set ``message_origin=sdk`` on the MessageInfo before calling
+        report_status.
         """
         data = msg.model_dump(mode="json")
         if not data.get("message_origin"):
@@ -605,8 +606,8 @@ class DefaultCallbacks(JobCallbacks):
         """Report status update to evalhub or log it.
 
         Message fields (``error_message``, ``warning_message``) are stamped with
-        ``message_origin=adapter`` when unset. SDK-generated errors should set
-        ``message_origin=sdk`` explicitly before calling this method.
+        ``message_origin=adapter`` when unset. Errors from the SDK itself should
+        set ``message_origin=sdk`` explicitly before calling this method.
 
         Args:
             update: Status update to report
