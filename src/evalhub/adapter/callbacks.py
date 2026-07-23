@@ -592,10 +592,9 @@ class DefaultCallbacks(JobCallbacks):
     ) -> dict[str, Any]:
         """Serialize a message for /events, stamping message_origin when unset.
 
-        Adapter-driven ``report_status`` / ``report_results`` calls default to
-        ``adapter``. Errors from the SDK itself (e.g. MLflow save failure)
-        should set ``message_origin=sdk`` on the MessageInfo before calling
-        report_status.
+        Adapter-driven ``report_status`` calls default to ``adapter``. Errors
+        from the SDK itself (e.g. MLflow save failure) should set
+        ``message_origin=sdk`` on the MessageInfo before calling report_status.
         """
         data = msg.model_dump(mode="json")
         if not data.get("message_origin"):
@@ -695,9 +694,6 @@ class DefaultCallbacks(JobCallbacks):
         This sends the complete results including metrics to the evalhub service.
         If the provider did not supply an Environment Card, a best-effort card
         is auto-captured from the current runtime.
-
-        When message fields are present on the event payload they are stamped
-        with ``message_origin=adapter`` (same as ``report_status``).
 
         Args:
             results: Final job results to report

@@ -162,8 +162,7 @@ class EvaluationResult(BaseModel):
 class MessageOrigin(str, Enum):
     """Origin of a status, warning, or error message.
 
-    - ``adapter``: error or message from the adapter (via ``report_status`` /
-      ``report_results``).
+    - ``adapter``: error or message from the adapter (via ``report_status``).
     - ``sdk``: error or message from the EvalHub SDK itself (e.g. MLflow
       save failure).
     - ``server`` / ``runtime``: used by the EvalHub service / job runtime.
